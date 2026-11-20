@@ -1,0 +1,89 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Datos crudos cargados desde CSV con COPY INTO (script 02). Todas las
+      columnas son varchar salvo id_post (number). La limpieza y el tipado se
+      hacen en staging.
+    # dev -> DEV_BRONZEPROJECT_DB; en PRE/PRO la database es un clon de la de DEV.
+    database: "{{ target.name | upper }}_BRONZEPROJECT_DB"
+    schema: sql_server_dbo
+
+    tables:
+      - name: noticias
+        description: >
+          Una fila por noticia y periodista (desnormalizado: periódico,
+          periodista y autor principal vienen en la misma fila).
+        columns:
+          - name: titular
+          - name: subtitulo
+          - name: desarrollo
+            description: Cuerpo de la noticia.
+          - name: imagen
+          - name: url
+            description: Clave natural de la noticia.
+            tests:
+              - not_null
+          - name: categoria
+          - name: fecha_publicacion
+            description: Varchar con formatos mezclados.
+          - name: nombre_periodico
+            description: Con variantes de mayúsculas y espacios.
+          - name: fecha_creacion_periodico
+          - name: nombre_periodista
+          - name: email_periodista
+          - name: apellidos_periodista
+          - name: biografia_periodista
+          - name: autor_principal
+            description: Varchar con valores mezclados (TRUE, FALSE, S, 1...).
+          - name: _loaded_at
+            description: Momento de la carga; base del filtro incremental.
+
+      - name: posts_4chan
+        description: >
+          Una fila por post (desnormalizado: tablón y título del thread vienen
+          en cada post).
+        columns:
+          - name: name_tablon
+          - name: siglas
+            description: Con variantes (/pol/, pol/, " /pol/").
+          - name: titulo_thread
+          - name: id_post
+            description: Número. Hay IDs repetidos en origen (deduplicar en staging).
+            tests:
+              - not_null
+              - unique:
+                  config:
+                    severity: warn
+          - name: id_usuario
+            description: Hash alfanumérico; vacío en algunos posts.
+          - name: name_usuario
+          - name: comment
+          - name: image
+          - name: post_padre
+            description: ID del post al que responde; vacío si abre el thread.
+          - name: fecha_post
+          - name: _loaded_at
+            description: Momento de la carga; base del filtro incremental.
+
+      - name: eventos
+        description: Catálogo de eventos. Hecho principal de Gold.
+        columns:
+          - name: id_evento
+            description: Hay IDs repetidos y eventos casi duplicados con IDs distintos.
+            tests:
+              - not_null
+              - unique:
+                  config:
+                    severity: warn
+          - name: evento
+          - name: fecha_evento
+            description: Varchar con formatos mezclados y algunas fechas inválidas.
+          - name: descripcion
+          - name: categoria
+            description: Con variantes de mayúsculas, tildes y espacios.
+          - name: ubicacion
+            description: Contiene N/A, Desconocida y vacíos.
+          - name: _loaded_at
+            description: Momento de la carga; base del filtro incremental.
