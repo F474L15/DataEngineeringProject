@@ -38,18 +38,37 @@ clean-targets:         # directories to be removed by `dbt clean`
 models:
   DataEngineeringProject:
     staging:
-      +database: "{{ target.name | upper }}_SILVERPROJECT_DB"
+      +database: "{{ env_var('DBT_SILVERPROJECT_DB') }}"
       +schema: staging
       +materialized: view
 
     silver:
-      +database: "{{ target.name | upper }}_SILVERPROJECT_DB"
+      +database: "{{ env_var('DBT_SILVERPROJECT_DB') }}"
       +schema: silver
       +materialized: table
       +incremental_strategy: merge
       +on_schema_change: append_new_columns
 
     gold:
-      +database: "{{ target.name | upper }}_GOLDPROJECT_DB"
+      +database: "{{ env_var('DBT_GOLDPROJECT_DB') }}"
       +schema: gold
       +materialized: table
+
+# Seeds: dimensiones pequeñas y estáticas (tablones y categorías). Van a su propio
+# schema, dentro de la database Silver. Tipos explícitos para que dbt no los
+# infiera del CSV.
+
+seeds:
+  DataEngineeringProject:
+    +database: "{{ env_var('DBT_SILVERPROJECT_DB') }}"
+    +schema: seeds
+    tablones:
+      +column_types:
+        id_tablon: number(38, 0)
+        name_tablon: varchar(100)
+        siglas: varchar(10)
+    categorias:
+      +column_types:
+        id_categoria: number(38, 0)
+        categoria: varchar(50)
+        categoria_clave: varchar(50)

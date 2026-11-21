@@ -1,0 +1,111 @@
+version: 2
+
+models:
+  - name: stg_sql_server_dbo__post
+    description: Post de 4chan limpio, uno por id_post.
+    columns:
+      - name: id_post
+        tests: [unique, not_null]
+      - name: id_thread
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__thread')
+                field: id_thread
+      - name: id_tablon
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('tablones')
+                field: id_tablon
+      - name: post_padre
+        description: Hay unos 40 posts cuyo padre no existe en la tabla.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__post')
+                field: id_post
+              config:
+                severity: warn
+
+  - name: stg_sql_server_dbo__thread
+    description: Un thread por (tablón, título normalizado), derivado de los posts.
+    columns:
+      - name: id_thread
+        tests: [unique, not_null]
+      - name: id_tablon
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('tablones')
+                field: id_tablon
+
+  - name: stg_sql_server_dbo__evento
+    description: Evento limpio, uno por id_evento.
+    columns:
+      - name: id_evento
+        tests: [unique, not_null]
+      - name: id_categoria
+        tests:
+          - relationships:
+              arguments:
+                to: ref('categorias')
+                field: id_categoria
+                config:
+                  severity: warn
+
+  - name: stg_sql_server_dbo__noticia
+    description: Noticia limpia, una por URL normalizada.
+    columns:
+      - name: id_noticia
+        tests: [unique, not_null]
+      - name: id_periodico
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__periodico')
+                field: id_periodico
+      - name: id_categoria
+        tests:
+          - relationships:
+              arguments:
+                to: ref('categorias')
+                field: id_categoria
+                config:
+                  severity: warn
+
+  - name: stg_sql_server_dbo__periodico
+    description: Un periódico por clave normalizada.
+    columns:
+      - name: id_periodico
+        tests: [unique, not_null]
+
+  - name: stg_sql_server_dbo__periodista
+    description: Un periodista por clave de nombre y apellidos.
+    columns:
+      - name: id_periodista
+        tests: [unique, not_null]
+
+  - name: stg_sql_server_dbo__escribe
+    description: Relación noticia-periodista.
+    columns:
+      - name: id_escribe
+        tests: [unique, not_null]
+      - name: id_noticia
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__noticia')
+                field: id_noticia
+      - name: id_periodista
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__periodista')
+                field: id_periodista

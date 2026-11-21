@@ -1,0 +1,27 @@
+version: 2
+
+seeds:
+  - name: tablones
+    description: >
+      Tablones de 4chan. Dimensión estática de seis filas. Staging resuelve el
+      tablón de cada post comparando su nombre (con erratas) con name_tablon.
+    columns:
+      - name: id_tablon
+        tests: [unique, not_null]
+      - name: name_tablon
+        tests: [unique, not_null]
+      - name: siglas
+        tests: [unique, not_null]
+
+  - name: categorias
+    description: >
+      Categorías compartidas por Evento y Noticia. categoria_clave es la forma
+      normalizada (minúsculas, sin tildes) con la que staging une cada variante
+      escrita en origen.
+    columns:
+      - name: id_categoria
+        tests: [unique, not_null]
+      - name: categoria
+        tests: [unique, not_null]
+      - name: categoria_clave
+        tests: [unique, not_null]

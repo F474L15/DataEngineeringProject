@@ -6,9 +6,16 @@ sources:
       Datos crudos cargados desde CSV con COPY INTO (script 02). Todas las
       columnas son varchar salvo id_post (number). La limpieza y el tipado se
       hacen en staging.
-    # dev -> DEV_BRONZEPROJECT_DB; en PRE/PRO la database es un clon de la de DEV.
-    database: "{{ target.name | upper }}_BRONZEPROJECT_DB"
+    # Variable de entorno de dbt Cloud: DEV_BRONZEPROJECT_DB, PRE_... o PRO_...
+    database: "{{ env_var('DBT_BRONZEPROJECT_DB') }}"
     schema: sql_server_dbo
+
+    config:
+      loaded_at_field: _loaded_at
+      # Las cargas son manuales por lotes, así que los umbrales son holgados.
+      freshness:
+        warn_after: {count: 7, period: day}
+        error_after: {count: 30, period: day}
 
     tables:
       - name: noticias
@@ -16,27 +23,18 @@ sources:
           Una fila por noticia y periodista (desnormalizado: periódico,
           periodista y autor principal vienen en la misma fila).
         columns:
-          - name: titular
-          - name: subtitulo
-          - name: desarrollo
-            description: Cuerpo de la noticia.
-          - name: imagen
           - name: url
-            description: Clave natural de la noticia.
+            description: Clave natural de la noticia. Vacía en 25 filas.
             tests:
-              - not_null
-          - name: categoria
+              - not_null:
+                  config:
+                    severity: warn
           - name: fecha_publicacion
-            description: Varchar con formatos mezclados.
+            description: Varchar con seis formatos mezclados.
           - name: nombre_periodico
-            description: Con variantes de mayúsculas y espacios.
-          - name: fecha_creacion_periodico
-          - name: nombre_periodista
-          - name: email_periodista
-          - name: apellidos_periodista
-          - name: biografia_periodista
+            description: Con variantes de mayúsculas, espacios y sufijo S.L.
           - name: autor_principal
-            description: Varchar con valores mezclados (TRUE, FALSE, S, 1...).
+            description: Varchar con valores mezclados (TRUE, FALSE, S, 1, Sí...).
           - name: _loaded_at
             description: Momento de la carga; base del filtro incremental.
 
@@ -45,12 +43,8 @@ sources:
           Una fila por post (desnormalizado: tablón y título del thread vienen
           en cada post).
         columns:
-          - name: name_tablon
-          - name: siglas
-            description: Con variantes (/pol/, pol/, " /pol/").
-          - name: titulo_thread
           - name: id_post
-            description: Número. Hay IDs repetidos en origen (deduplicar en staging).
+            description: Número. Hay 95 IDs repetidos en origen; staging deduplica.
             tests:
               - not_null
               - unique:
@@ -58,12 +52,12 @@ sources:
                     severity: warn
           - name: id_usuario
             description: Hash alfanumérico; vacío en algunos posts.
-          - name: name_usuario
-          - name: comment
-          - name: image
-          - name: post_padre
-            description: ID del post al que responde; vacío si abre el thread.
+          - name: name_tablon
+            description: Con erratas ('Intrnational').
+          - name: siglas
+            description: Con variantes de formato y, en unas 80 filas, de otro tablón.
           - name: fecha_post
+            description: Varchar con formatos mezclados; incluye 'ayer' y '00/00/0000'.
           - name: _loaded_at
             description: Momento de la carga; base del filtro incremental.
 
@@ -77,13 +71,9 @@ sources:
               - unique:
                   config:
                     severity: warn
-          - name: evento
           - name: fecha_evento
             description: Varchar con formatos mezclados y algunas fechas inválidas.
-          - name: descripcion
           - name: categoria
             description: Con variantes de mayúsculas, tildes y espacios.
-          - name: ubicacion
-            description: Contiene N/A, Desconocida y vacíos.
           - name: _loaded_at
             description: Momento de la carga; base del filtro incremental.
