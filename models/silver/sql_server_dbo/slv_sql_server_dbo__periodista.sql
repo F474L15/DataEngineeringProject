@@ -13,3 +13,4 @@ select
     , biografia
     , _loaded_at
 from {{ ref('stg_sql_server_dbo__periodista') }}
+order by id_periodista

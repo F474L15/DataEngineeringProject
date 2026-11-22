@@ -1,10 +1,10 @@
-{# Grano: evento x noticia x palabra clave. Vacío mientras MEN siga pendiente en staging. #}
+{# Grano: evento x noticia (palabras_clave = lista de las que aparecen). Vacío mientras MEN siga pendiente en staging. #}
 select
       m.id_men
     , m.id_evento
     , m.id_noticia
     , e.id_categoria
-    , coalesce(to_number(to_char(n.fecha_publicacion, 'YYYYMMDD')), -1)   as id_fecha
+    , coalesce(to_number(to_char(n.fecha_publicacion, 'YYYYMMDD')), 0)    as id_fecha
     , m.palabras_clave
     , n.fecha_publicacion                                                  as fecha_mencion
     , n.fecha_publicacion_valida                                           as fecha_mencion_valida
@@ -13,3 +13,4 @@ select
 from {{ ref('slv_sql_server_dbo__menciona_evento_noticia') }} m
 join {{ ref('dim_evento') }}  e on e.id_evento  = m.id_evento
 join {{ ref('dim_noticia') }} n on n.id_noticia = m.id_noticia
+order by m.id_men

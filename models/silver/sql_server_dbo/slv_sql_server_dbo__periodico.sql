@@ -12,3 +12,4 @@ select
     , fecha_creacion
     , _loaded_at
 from {{ ref('stg_sql_server_dbo__periodico') }}
+order by id_periodico

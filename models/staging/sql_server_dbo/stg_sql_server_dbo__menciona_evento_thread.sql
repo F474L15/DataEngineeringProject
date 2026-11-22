@@ -2,7 +2,10 @@
     MET · Menciona_Evento_Thread. Relación entre un evento y los threads de 4chan
     que lo mencionan (ID_MET, ID_Thread, ID_Evento, Palabras_clave).
 
-    Una fila por (evento, thread, palabra clave). id_met es el hash de las tres.
+    Una fila por (evento, thread). id_met = abs(hash(id_evento, id_thread)): es
+    siempre positivo y el mismo par da siempre el mismo id. palabras_clave es la
+    lista de las palabras del evento que aparecen en los posts del thread,
+    separadas por coma y en orden alfabético.
     No existe en Bronze: el texto está en los posts, así que la coincidencia se
     evalúa por post y se agrupa por thread.
 
@@ -96,17 +99,18 @@ coincidencias as (
     select
           id_evento
         , id_thread
-        , palabras_clave
+        , listagg(distinct palabras_clave, ', ')
+              within group (order by palabras_clave)    as palabras_clave
         , min(fecha_post)                               as fecha_primera_mencion
-        , count(*)                                      as n_posts_mencionan
+        , count(distinct id_post)                       as n_posts_mencionan
         , max(_loaded_at)                               as _loaded_at
     from posts_que_mencionan
-    group by id_evento, id_thread, palabras_clave
+    group by id_evento, id_thread
 
 )
 
 select
-      hash(id_evento, id_thread, palabras_clave)        as id_met
+      abs(hash(id_evento, id_thread))                   as id_met
     , id_thread
     , id_evento
     , palabras_clave

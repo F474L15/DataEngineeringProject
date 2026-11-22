@@ -70,18 +70,51 @@ limpio as (
 
 )
 
+,
+
+deduplicado as (
+
+    select
+          id_post
+        , abs(hash(id_tablon, titulo_clave))    as id_thread
+        , id_tablon
+        , titulo_thread
+        , titulo_clave
+        , id_usuario
+        , name_usuario
+        , comment
+        , image
+        , post_padre
+        , fecha_post
+        , _loaded_at
+    from limpio
+    qualify row_number() over (
+        partition by id_post
+        order by _loaded_at desc, fecha_post desc nulls last
+               , hash(comment, name_usuario, id_usuario, post_padre)
+    ) = 1
+
+)
+
 select
       id_post
-    , hash(id_tablon, titulo_clave)     as id_thread
+    , id_thread
     , id_tablon
-    , titulo_thread
+    , {{ texto_o_blanco('titulo_thread') }}      as titulo_thread
     , titulo_clave
-    , id_usuario
-    , name_usuario
-    , comment
-    , image
-    , post_padre
+    , {{ texto_o_blanco('id_usuario') }}         as id_usuario
+    , {{ texto_o_blanco('name_usuario') }}       as name_usuario
+    , {{ texto_o_blanco('comment') }}            as comment
+    , {{ texto_o_blanco('image') }}              as image
+    -- Gobernanza: un post sin padre apunta al post más antiguo de su thread
+    -- (el propio post raíz se apunta a sí mismo).
+    , coalesce(
+          post_padre
+        , first_value(id_post) over (
+              partition by id_thread
+              order by fecha_post asc nulls last, id_post asc
+          )
+      )                                          as post_padre
     , fecha_post
     , _loaded_at
-from limpio
-qualify row_number() over (partition by id_post order by _loaded_at desc) = 1
+from deduplicado

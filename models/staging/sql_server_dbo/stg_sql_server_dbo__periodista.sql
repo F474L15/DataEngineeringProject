@@ -14,15 +14,15 @@ with base as (
 
 select
       id_periodista
-    , mode({{ limpiar_texto('nombre_periodista') }})                     as nombre
-    , mode({{ limpiar_texto('apellidos_periodista') }})                  as apellidos
+    , coalesce(mode({{ limpiar_texto('nombre_periodista') }}), ' ')      as nombre
+    , coalesce(mode({{ limpiar_texto('apellidos_periodista') }}), ' ')   as apellidos
     , mode(
         case
             when regexp_like(lower(trim(email_periodista)), '[^@\\s]+@[^@\\s]+\\.[^@\\s]+')
             then lower(trim(email_periodista))
         end
       )                                                                  as email
-    , mode({{ recortar('biografia_periodista') }})                       as biografia
+    , coalesce(mode({{ recortar('biografia_periodista') }}), ' ')        as biografia
     , max(_loaded_at)                                                    as _loaded_at
 from base
 group by id_periodista

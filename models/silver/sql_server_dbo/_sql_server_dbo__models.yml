@@ -2,20 +2,38 @@ version: 2
 
 models:
   - name: slv_sql_server_dbo__post
-    description: Post de 4chan. Incremental por id_post.
+    description: >
+      Post de 4chan. Incremental por id_post. Ordenado por id_post.
     columns:
       - name: id_post
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_thread
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__thread')
                 field: id_thread
-      - name: post_padre
-        description: Hay unos 40 posts cuyo padre no existe en la tabla.
+      - name: id_usuario
+        description: Texto; los nulos se guardan como un espacio.
         tests:
+          - not_null
+      - name: name_usuario
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: comment
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: post_padre
+        description: Un post sin padre apunta al post más antiguo de su thread; ese post se apunta a sí mismo. Hay unos 40 posts cuyo padre no existe en la tabla.
+        tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__post')
@@ -23,18 +41,21 @@ models:
               config:
                 severity: warn
       - name: fecha_post
-        description: >
-          timestamp_ntz sin zona horaria. Hay unas 26 fechas futuras y unas 33
-          nulas por formato irreconocible.
+        description: timestamp_ntz sin zona horaria. Hay unas 26 fechas futuras y unas 33 nulas por formato irreconocible. Las fechas no se rellenan.
 
   - name: slv_sql_server_dbo__thread
-    description: Thread de 4chan, uno por (tablón, título normalizado). Incremental por id_thread.
+    description: >
+      Thread de 4chan, uno por (tablón, título normalizado). Incremental por id_thread. Ordenado por id_thread.
     columns:
       - name: id_thread
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_tablon
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('tablones')
@@ -42,69 +63,131 @@ models:
 
   - name: slv_sql_server_dbo__evento
     description: >
-      Evento. Incremental por id_evento. Conserva los eventos casi duplicados con
-      IDs distintos; la regla de deduplicación está pendiente.
+      Evento. Incremental por id_evento. Ordenado por id_evento. Conserva los eventos casi duplicados con IDs distintos; la regla de deduplicación está pendiente.
     columns:
       - name: id_evento
-        tests: [unique, not_null]
-      - name: id_categoria
         tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: id_categoria
+        description: Sin categoría o no reconocida = id 16 (fila del seed categorias).
+        tests:
+          - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('categorias')
                 field: id_categoria
-              config:
-                severity: warn
+      - name: descripcion
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: ubicacion
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
       - name: fecha_evento
         description: timestamp_ntz sin zona horaria. Nula si el formato no se reconoce o la fecha no existe.
 
   - name: slv_sql_server_dbo__noticia
-    description: Noticia, una por URL normalizada. Incremental por id_noticia.
+    description: >
+      Noticia, una por URL normalizada. Incremental por id_noticia. Ordenado por id_noticia.
     columns:
       - name: id_noticia
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_periodico
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__periodico')
                 field: id_periodico
       - name: id_categoria
+        description: Sin categoría o no reconocida = id 16 (fila del seed categorias).
         tests:
+          - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('categorias')
                 field: id_categoria
-              config:
-                severity: warn
+      - name: titular
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: subtitulo
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: cuerpo
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: imagen
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
       - name: url
         description: Clave de negocio de la que sale id_noticia. Nula en unas 25 filas de origen.
       - name: fecha_publicacion
-        description: >
-          timestamp_ntz sin zona horaria. Hay noticias de 1960 y unas 22 con fecha
-          futura en origen.
+        description: timestamp_ntz sin zona horaria. Hay noticias de 1960 y unas 22 con fecha futura en origen. Las fechas no se rellenan.
 
   - name: slv_sql_server_dbo__periodico
-    description: Periódico. Tabla completa en cada ejecución.
+    description: >
+      Periódico. Tabla completa en cada ejecución. Ordenado por id_periodico.
     columns:
       - name: id_periodico
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: nombre
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
 
   - name: slv_sql_server_dbo__periodista
-    description: Periodista. Tabla completa en cada ejecución.
+    description: >
+      Periodista. Tabla completa en cada ejecución. Ordenado por id_periodista.
     columns:
       - name: id_periodista
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: nombre
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: apellidos
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: email
+        description: Nulo si falta o no es válido.
+      - name: biografia
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
 
   - name: slv_sql_server_dbo__escribe
-    description: Relación noticia-periodista. Incremental por id_escribe.
+    description: >
+      Relación noticia-periodista. Incremental por id_escribe. Ordenado por id_escribe.
     columns:
       - name: id_escribe
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_noticia
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__noticia')
@@ -112,6 +195,7 @@ models:
       - name: id_periodista
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__periodista')
@@ -119,14 +203,17 @@ models:
 
   - name: slv_sql_server_dbo__menciona_evento_noticia
     description: >
-      MEN (Menciona_Evento_Noticia). Incremental por id_men. Vacío mientras la
-      coincidencia siga pendiente en staging.
+      MEN (Menciona_Evento_Noticia). Una fila por (evento, noticia); id_men = abs(hash(id_evento, id_noticia)). palabras_clave lista las que aparecen. Incremental por id_men. Vacío mientras la coincidencia siga pendiente.
     columns:
       - name: id_men
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_evento
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__evento')
@@ -134,23 +221,28 @@ models:
       - name: id_noticia
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__noticia')
                 field: id_noticia
       - name: palabras_clave
-        tests: [not_null]
+        tests:
+          - not_null
 
   - name: slv_sql_server_dbo__menciona_evento_thread
     description: >
-      MET. Una fila por (evento, thread, palabra clave). La coincidencia está
-      pendiente, así que sale vacío.
+      MET (Menciona_Evento_Thread). Una fila por (evento, thread); id_met = abs(hash(id_evento, id_thread)). palabras_clave lista las que aparecen. Incremental por id_met. Vacío mientras la coincidencia siga pendiente.
     columns:
       - name: id_met
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_thread
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__thread')
@@ -158,11 +250,15 @@ models:
       - name: id_evento
         tests:
           - not_null
+          - positive_values
           - relationships:
               arguments:
                 to: ref('slv_sql_server_dbo__evento')
                 field: id_evento
       - name: palabras_clave
-        tests: [not_null]
+        tests:
+          - not_null
       - name: fecha_primera_mencion
+        description: Fecha del post más antiguo del thread que menciona el evento (timestamp_ntz; puede ser nula).
       - name: n_posts_mencionan
+        description: Número de posts distintos del thread que mencionan el evento.

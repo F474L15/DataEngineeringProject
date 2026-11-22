@@ -2,7 +2,11 @@
     MEN · Menciona_Evento_Noticia. Relación entre un evento y las noticias que lo
     mencionan (ID_MEN, ID_Evento, ID_Noticia, Palabras_clave).
 
-    Una fila por (evento, noticia, palabra clave). id_men es el hash de las tres.
+    Una fila por (evento, noticia). id_men = abs(hash(id_evento, id_noticia)): es
+    siempre positivo y el mismo par da siempre el mismo id (hash es determinista;
+    un row_number cambiaría al entrar datos nuevos). palabras_clave es la lista
+    de las palabras del evento que aparecen en la noticia, separadas por coma y
+    en orden alfabético.
     No existe en Bronze: se construye comparando las palabras clave del evento
     (macro eventos_palabras_clave) con el texto de la noticia.
 
@@ -83,17 +87,19 @@ coincidencias as (
     select
           c.id_evento
         , c.id_noticia
-        , c.palabras_clave
-        , c._loaded_at
+        , listagg(c.palabras_clave, ', ')
+              within group (order by c.palabras_clave)  as palabras_clave
+        , max(c._loaded_at)                             as _loaded_at
     from cruce c
     join pares p
         on p.id_evento = c.id_evento
        and p.id_noticia = c.id_noticia
+    group by c.id_evento, c.id_noticia
 
 )
 
 select
-      hash(id_evento, id_noticia, palabras_clave)       as id_men
+      abs(hash(id_evento, id_noticia))                  as id_men
     , id_evento
     , id_noticia
     , palabras_clave

@@ -23,17 +23,21 @@ categorias as (
 
 select
       try_to_number(trim(s.id_evento))                              as id_evento
-    , {{ limpiar_texto('s.evento') }}                                as evento
-    , {{ clave_texto('s.evento') }}                                  as evento_clave
+    , {{ texto_o_blanco(limpiar_texto('s.evento')) }}                as evento
+    , {{ texto_o_blanco(clave_texto('s.evento')) }}                  as evento_clave
     , {{ parse_fecha('s.fecha_evento') }}                            as fecha_evento
-    , {{ recortar(reparar_encoding('s.descripcion')) }}              as descripcion
-    , c.id_categoria
-    , {{ limpiar_ubicacion('s.ubicacion') }}                         as ubicacion
+    , {{ texto_o_blanco(recortar(reparar_encoding('s.descripcion'))) }}  as descripcion
+    , coalesce(c.id_categoria, sc.id_categoria)                      as id_categoria
+    , {{ texto_o_blanco(limpiar_ubicacion('s.ubicacion')) }}         as ubicacion
     , s._loaded_at
 from src s
 left join categorias c
     on c.categoria_clave = {{ clave_categoria('s.categoria') }}
+-- Sin categoría o categoría no reconocida: la fila 'sin categoria' del seed.
+left join categorias sc
+    on sc.categoria_clave = 'sin categoria'
 qualify row_number() over (
     partition by try_to_number(trim(s.id_evento))
-    order by s._loaded_at desc
+    order by s._loaded_at desc, s.fecha_evento desc nulls last
+           , s.evento, s.descripcion nulls last, s.ubicacion nulls last
 ) = 1

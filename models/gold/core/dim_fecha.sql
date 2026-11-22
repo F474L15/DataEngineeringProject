@@ -1,4 +1,4 @@
-{# Un día por fila de 2000 a 2030. Miembro desconocido: id_fecha = -1. #}
+{# Un día por fila de 2000 a 2030. Miembro desconocido: id_fecha = 0. #}
 with dias as (
     select dateadd(day, row_number() over (order by seq4()) - 1, '2000-01-01'::date) as fecha
     from table(generator(rowcount => 11323))
@@ -17,4 +17,5 @@ select
     , dayofweekiso(fecha) >= 6                as es_fin_de_semana
 from dias
 union all
-select -1, null, null, null, null, 'Sin fecha', null, null, 'Sin fecha', null
+select 0, null, null, null, null, 'Sin fecha', null, null, 'Sin fecha', null
+order by id_fecha

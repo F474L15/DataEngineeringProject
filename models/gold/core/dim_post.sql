@@ -8,3 +8,4 @@ select
     , fecha_post
     , {{ fecha_es_valida('fecha_post') }} as fecha_post_valida
 from {{ ref('slv_sql_server_dbo__post') }}
+order by id_post

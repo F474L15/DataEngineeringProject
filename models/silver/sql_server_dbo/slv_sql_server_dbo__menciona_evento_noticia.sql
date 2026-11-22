@@ -15,3 +15,4 @@ select
     , _loaded_at
 from {{ ref('stg_sql_server_dbo__menciona_evento_noticia') }}
 {{ filtro_incremental() }}
+order by id_men

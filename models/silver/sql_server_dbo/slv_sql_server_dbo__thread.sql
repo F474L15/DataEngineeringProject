@@ -13,3 +13,4 @@ select
     , _loaded_at
 from {{ ref('stg_sql_server_dbo__thread') }}
 {{ filtro_incremental() }}
+order by id_thread

@@ -2,53 +2,103 @@ version: 2
 
 models:
   - name: dim_fecha
+    description: >
+      Una fila por día de 2000 a 2030, más la fila 0 (sin fecha). Ordenada por id_fecha.
     columns:
       - name: id_fecha
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - non_negative_values
   - name: dim_categoria
+    description: >
+      Categorías del seed, incluida 'Sin categoría' (id 16). Ordenada por id_categoria.
     columns:
       - name: id_categoria
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
   - name: dim_evento
+    description: >
+      Ordenada por id_evento.
     columns:
       - name: id_evento
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_categoria
         tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_categoria')
                 field: id_categoria
+      - name: descripcion
+        tests:
+          - not_null
   - name: dim_noticia
+    description: >
+      Ordenada por id_noticia.
     columns:
       - name: id_noticia
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_categoria
         tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_categoria')
                 field: id_categoria
+      - name: nombre_periodico
+        tests:
+          - not_null
+      - name: categoria_noticia
+        tests:
+          - not_null
   - name: dim_thread
+    description: >
+      Ordenada por id_thread.
     columns:
       - name: id_thread
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: name_tablon
+        tests:
+          - not_null
+      - name: siglas
+        tests:
+          - not_null
   - name: dim_post
+    description: >
+      Ordenada por id_post.
     columns:
       - name: id_post
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_thread
         tests:
           - relationships:
               arguments:
                 to: ref('dim_thread')
                 field: id_thread
-
   - name: fct_menciona_evento_noticia
-    description: Evento x noticia x palabra clave. Vacío hasta definir la coincidencia en staging.
+    description: >
+      Una fila por (evento, noticia). palabras_clave lista las que aparecen. Ordenada por id_men. Vacío hasta definir la coincidencia.
     columns:
       - name: id_men
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_evento
         tests:
           - relationships:
@@ -63,18 +113,22 @@ models:
                 field: id_noticia
       - name: id_fecha
         tests:
+          - non_negative_values
           - relationships:
               arguments:
                 to: ref('dim_fecha')
                 field: id_fecha
               config:
                 severity: warn
-
   - name: fct_menciona_evento_4chan
-    description: Evento x thread x palabra clave. Fecha = primer post que menciona. Vacío hasta definir la coincidencia.
+    description: >
+      Una fila por (evento, thread). Fecha = primer post que menciona. Ordenada por id_met. Vacío hasta definir la coincidencia.
     columns:
       - name: id_met
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - positive_values
       - name: id_evento
         tests:
           - relationships:
@@ -89,6 +143,7 @@ models:
                 field: id_thread
       - name: id_fecha
         tests:
+          - non_negative_values
           - relationships:
               arguments:
                 to: ref('dim_fecha')

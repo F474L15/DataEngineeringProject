@@ -11,7 +11,7 @@ with base as (
 )
 
 select
-      hash(id_noticia, id_periodista)                       as id_escribe
+      abs(hash(id_noticia, id_periodista))                  as id_escribe
     , id_noticia
     , id_periodista
     , {{ a_booleano('autor_principal') }}                    as autor_principal

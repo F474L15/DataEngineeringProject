@@ -46,9 +46,9 @@
 {# Filas de Bronze con los tres IDs calculados. Uso: with base as ({{ noticias_base() }}) #}
 {% macro noticias_base() -%}
     select
-          hash({{ clave_noticia('url', 'titular', 'nombre_periodico', 'fecha_publicacion') }})   as id_noticia
-        , hash({{ clave_periodico('nombre_periodico') }})                                          as id_periodico
-        , hash({{ clave_periodista('nombre_periodista', 'apellidos_periodista') }})                as id_periodista
+          abs(hash({{ clave_noticia('url', 'titular', 'nombre_periodico', 'fecha_publicacion') }}))   as id_noticia
+        , abs(hash({{ clave_periodico('nombre_periodico') }}))                                          as id_periodico
+        , abs(hash({{ clave_periodista('nombre_periodista', 'apellidos_periodista') }}))                as id_periodista
         , *
     from {{ source('bronze', 'noticias') }}
 {%- endmacro %}

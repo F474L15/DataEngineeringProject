@@ -12,7 +12,7 @@ with base as (
 
 select
       id_periodico
-    , mode({{ limpiar_texto('nombre_periodico') }})                      as nombre
+    , coalesce(mode({{ limpiar_texto('nombre_periodico') }}), ' ')      as nombre
     , mode({{ parse_fecha('fecha_creacion_periodico') }})                as fecha_creacion
     , max(_loaded_at)                                                    as _loaded_at
 from base
