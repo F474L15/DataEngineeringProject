@@ -1,0 +1,122 @@
+version: 2
+
+models:
+  - name: dim_fecha
+    columns:
+      - name: id_fecha
+        tests: [unique, not_null]
+  - name: dim_categoria
+    columns:
+      - name: id_categoria
+        tests: [unique, not_null]
+  - name: dim_evento
+    columns:
+      - name: id_evento
+        tests: [unique, not_null]
+      - name: id_categoria
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_categoria')
+                field: id_categoria
+  - name: dim_noticia
+    columns:
+      - name: id_noticia
+        tests: [unique, not_null]
+      - name: id_categoria
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_categoria')
+                field: id_categoria
+  - name: dim_thread
+    columns:
+      - name: id_thread
+        tests: [unique, not_null]
+  - name: dim_post
+    columns:
+      - name: id_post
+        tests: [unique, not_null]
+      - name: id_thread
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_thread')
+                field: id_thread
+
+  - name: fct_menciona_evento_noticia
+    description: Evento x noticia x palabra clave. Vacío hasta definir la coincidencia en staging.
+    columns:
+      - name: id_men
+        tests: [unique, not_null]
+      - name: id_evento
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_evento')
+                field: id_evento
+      - name: id_noticia
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_noticia')
+                field: id_noticia
+      - name: id_fecha
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_fecha')
+                field: id_fecha
+              config:
+                severity: warn
+
+  - name: fct_menciona_evento_4chan
+    description: Evento x thread x palabra clave. Fecha = primer post que menciona. Vacío hasta definir la coincidencia.
+    columns:
+      - name: id_met
+        tests: [unique, not_null]
+      - name: id_evento
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_evento')
+                field: id_evento
+      - name: id_thread
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_thread')
+                field: id_thread
+      - name: id_fecha
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_fecha')
+                field: id_fecha
+              config:
+                severity: warn
+
+  - name: rpt_ventaja_evento
+    description: >
+      Pregunta 1. minutos_ventaja_4chan = (primera noticia - primera mención en 4chan);
+      positivo = 4chan se adelantó.
+    columns:
+      - name: id_evento
+        tests: [unique, not_null]
+      - name: resultado
+        tests:
+          - accepted_values:
+              arguments:
+                values: [sin_menciones, solo_4chan, solo_prensa, 4chan_primero, prensa_primero, empate]
+
+  - name: rpt_noticias_origen_4chan
+    description: Pregunta 2. Noticias de eventos que mencionan 4chan.
+    columns:
+      - name: tramo
+        tests:
+          - accepted_values:
+              arguments:
+                values: [sin_fecha_valida, no_posterior, primeras_24h, primera_semana, mas_tarde]
+
+  - name: rpt_respuestas_objetivos
+    description: Resumen de indicadores de las preguntas 1 y 2.

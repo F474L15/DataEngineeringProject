@@ -12,3 +12,5 @@
 {% macro palabras_clave_evento(columna) -%}
     cast(null as varchar)
 {%- endmacro %}
+
+-- comprobar y estudiar como es la forma más efectiva después

@@ -54,7 +54,7 @@ models:
               arguments:
                 to: ref('categorias')
                 field: id_categoria
-                config:
+              config:
                   severity: warn
 
   - name: stg_sql_server_dbo__noticia
@@ -75,7 +75,7 @@ models:
               arguments:
                 to: ref('categorias')
                 field: id_categoria
-                config:
+              config:
                   severity: warn
 
   - name: stg_sql_server_dbo__periodico

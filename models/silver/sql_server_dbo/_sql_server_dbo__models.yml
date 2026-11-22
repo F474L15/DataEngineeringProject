@@ -1,0 +1,168 @@
+version: 2
+
+models:
+  - name: slv_sql_server_dbo__post
+    description: Post de 4chan. Incremental por id_post.
+    columns:
+      - name: id_post
+        tests: [unique, not_null]
+      - name: id_thread
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__thread')
+                field: id_thread
+      - name: post_padre
+        description: Hay unos 40 posts cuyo padre no existe en la tabla.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__post')
+                field: id_post
+              config:
+                severity: warn
+      - name: fecha_post
+        description: >
+          timestamp_ntz sin zona horaria. Hay unas 26 fechas futuras y unas 33
+          nulas por formato irreconocible.
+
+  - name: slv_sql_server_dbo__thread
+    description: Thread de 4chan, uno por (tablón, título normalizado). Incremental por id_thread.
+    columns:
+      - name: id_thread
+        tests: [unique, not_null]
+      - name: id_tablon
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('tablones')
+                field: id_tablon
+
+  - name: slv_sql_server_dbo__evento
+    description: >
+      Evento. Incremental por id_evento. Conserva los eventos casi duplicados con
+      IDs distintos; la regla de deduplicación está pendiente.
+    columns:
+      - name: id_evento
+        tests: [unique, not_null]
+      - name: id_categoria
+        tests:
+          - relationships:
+              arguments:
+                to: ref('categorias')
+                field: id_categoria
+              config:
+                severity: warn
+      - name: fecha_evento
+        description: timestamp_ntz sin zona horaria. Nula si el formato no se reconoce o la fecha no existe.
+
+  - name: slv_sql_server_dbo__noticia
+    description: Noticia, una por URL normalizada. Incremental por id_noticia.
+    columns:
+      - name: id_noticia
+        tests: [unique, not_null]
+      - name: id_periodico
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__periodico')
+                field: id_periodico
+      - name: id_categoria
+        tests:
+          - relationships:
+              arguments:
+                to: ref('categorias')
+                field: id_categoria
+              config:
+                severity: warn
+      - name: url
+        description: Clave de negocio de la que sale id_noticia. Nula en unas 25 filas de origen.
+      - name: fecha_publicacion
+        description: >
+          timestamp_ntz sin zona horaria. Hay noticias de 1960 y unas 22 con fecha
+          futura en origen.
+
+  - name: slv_sql_server_dbo__periodico
+    description: Periódico. Tabla completa en cada ejecución.
+    columns:
+      - name: id_periodico
+        tests: [unique, not_null]
+
+  - name: slv_sql_server_dbo__periodista
+    description: Periodista. Tabla completa en cada ejecución.
+    columns:
+      - name: id_periodista
+        tests: [unique, not_null]
+
+  - name: slv_sql_server_dbo__escribe
+    description: Relación noticia-periodista. Incremental por id_escribe.
+    columns:
+      - name: id_escribe
+        tests: [unique, not_null]
+      - name: id_noticia
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__noticia')
+                field: id_noticia
+      - name: id_periodista
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__periodista')
+                field: id_periodista
+
+  - name: slv_sql_server_dbo__menciona_evento_noticia
+    description: >
+      MEN (Menciona_Evento_Noticia). Incremental por id_men. Vacío mientras la
+      coincidencia siga pendiente en staging.
+    columns:
+      - name: id_men
+        tests: [unique, not_null]
+      - name: id_evento
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__evento')
+                field: id_evento
+      - name: id_noticia
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__noticia')
+                field: id_noticia
+      - name: palabras_clave
+        tests: [not_null]
+
+  - name: stg_sql_server_dbo__menciona_evento_thread
+    description: >
+      MET. Una fila por (evento, thread, palabra clave). La coincidencia está
+      pendiente, así que sale vacío.
+    columns:
+      - name: id_met
+        tests: [unique, not_null]
+      - name: id_thread
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__thread')
+                field: id_thread
+      - name: id_evento
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_sql_server_dbo__evento')
+                field: id_evento
+      - name: palabras_clave
+        tests: [not_null]
+      - name: fecha_primera_mencion
+      - name: n_posts_mencionan
