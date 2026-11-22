@@ -141,7 +141,7 @@ models:
       - name: palabras_clave
         tests: [not_null]
 
-  - name: stg_sql_server_dbo__menciona_evento_thread
+  - name: slv_sql_server_dbo__menciona_evento_thread
     description: >
       MET. Una fila por (evento, thread, palabra clave). La coincidencia está
       pendiente, así que sale vacío.
@@ -153,14 +153,14 @@ models:
           - not_null
           - relationships:
               arguments:
-                to: ref('stg_sql_server_dbo__thread')
+                to: ref('slv_sql_server_dbo__thread')
                 field: id_thread
       - name: id_evento
         tests:
           - not_null
           - relationships:
               arguments:
-                to: ref('stg_sql_server_dbo__evento')
+                to: ref('slv_sql_server_dbo__evento')
                 field: id_evento
       - name: palabras_clave
         tests: [not_null]

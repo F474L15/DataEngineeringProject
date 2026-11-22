@@ -95,28 +95,3 @@ models:
                 field: id_fecha
               config:
                 severity: warn
-
-  - name: rpt_ventaja_evento
-    description: >
-      Pregunta 1. minutos_ventaja_4chan = (primera noticia - primera mención en 4chan);
-      positivo = 4chan se adelantó.
-    columns:
-      - name: id_evento
-        tests: [unique, not_null]
-      - name: resultado
-        tests:
-          - accepted_values:
-              arguments:
-                values: [sin_menciones, solo_4chan, solo_prensa, 4chan_primero, prensa_primero, empate]
-
-  - name: rpt_noticias_origen_4chan
-    description: Pregunta 2. Noticias de eventos que mencionan 4chan.
-    columns:
-      - name: tramo
-        tests:
-          - accepted_values:
-              arguments:
-                values: [sin_fecha_valida, no_posterior, primeras_24h, primera_semana, mas_tarde]
-
-  - name: rpt_respuestas_objetivos
-    description: Resumen de indicadores de las preguntas 1 y 2.

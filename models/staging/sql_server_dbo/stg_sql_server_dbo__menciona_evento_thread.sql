@@ -4,52 +4,104 @@
 
     Una fila por (evento, thread, palabra clave). id_met es el hash de las tres.
     No existe en Bronze: el texto está en los posts, así que la coincidencia se
-    evalúa por post y se agrupa por thread (un thread menciona el evento si lo
-    hace alguno de sus posts o su título).
+    evalúa por post y se agrupa por thread.
 
-    PENDIENTE: la condición de coincidencia está en el JOIN de `coincidencias`
-    (ahora `on 1 = 0`, así que el modelo sale vacío) y el token en el macro
-    palabras_clave_evento. Textos disponibles: comment (post) y titulo_thread.
+    Regla: un post menciona un evento si, como palabras completas en
+    titulo_thread + comment del post, aparecen TODAS sus palabras clave o al
+    menos UNA palabra distintiva (es_distintiva en el macro: 'epstein',
+    'vegas'...). Las palabras pueden repartirse entre título y comentario, pero
+    no entre posts distintos. Un thread menciona el evento si lo hace alguno de
+    sus posts. Se guardan solo las palabras que aparecen.
+
+    El token '4chan' NO se exige aquí: todos los posts vienen de 4chan y ninguno
+    lo nombra, así que exigirlo dejaría sin menciones a los eventos que lo
+    llevan. Solo se exige en MEN (noticias).
+
+    fecha_primera_mencion es la fecha del post más antiguo del thread que cumple
+    la regla (min ignora nulos); n_posts_mencionan cuenta esos posts.
 
     _loaded_at es el más reciente de las filas que se cruzan, para que un
     incremental en Silver vuelva a evaluar el par cuando llegan posts nuevos.
 #}
 
-with eventos as (
+with tokens as (
 
-    select
-          id_evento
-        , evento_clave
-        , {{ palabras_clave_evento('evento_clave') }}   as palabras_clave
-        , _loaded_at
-    from {{ ref('stg_sql_server_dbo__evento') }}
+    select id_evento, palabras_clave, es_distintiva, _loaded_at
+    from (
+
+        {{ eventos_palabras_clave() }}
+
+    )
+    where palabras_clave <> '4chan'
+
+),
+
+n_tokens as (
+
+    select id_evento, count(*) as n_tokens
+    from tokens
+    group by id_evento
 
 ),
 
 posts as (
 
     select
-          id_thread
-        , titulo_thread
-        , comment
+          id_post
+        , id_thread
+        , fecha_post
+        , ' ' || regexp_replace(
+              coalesce({{ clave_texto("coalesce(titulo_thread, '') || ' ' || coalesce(comment, '')") }}, '')
+            , '[^a-z0-9]+', ' ') || ' '                  as texto
         , _loaded_at
     from {{ ref('stg_sql_server_dbo__post') }}
+
+),
+
+cruce as (
+
+    select
+          t.id_evento
+        , p.id_post
+        , p.id_thread
+        , t.palabras_clave
+        , t.es_distintiva
+        , p.fecha_post
+        , greatest(t._loaded_at, p._loaded_at)          as _loaded_at
+    from tokens t
+    join posts p
+        on contains(p.texto, ' ' || t.palabras_clave || ' ')
+
+),
+
+posts_que_mencionan as (
+
+    select
+          c.id_evento
+        , c.id_post
+        , c.id_thread
+        , c.palabras_clave
+        , c.fecha_post
+        , c._loaded_at
+    from cruce c
+    join n_tokens k
+        on k.id_evento = c.id_evento
+    qualify count(*) over (partition by c.id_evento, c.id_post) = k.n_tokens
+         or sum(iff(c.es_distintiva, 1, 0)) over (partition by c.id_evento, c.id_post) > 0
 
 ),
 
 coincidencias as (
 
     select
-          e.id_evento
-        , p.id_thread
-        , e.palabras_clave
-        , max(greatest(e._loaded_at, p._loaded_at))     as _loaded_at
-    from eventos e
-    join posts p
-        -- PENDIENTE. Ejemplo (no activo):
-        --   on contains(lower(p.comment), e.palabras_clave)
-        on 1 = 0
-    group by e.id_evento, p.id_thread, e.palabras_clave
+          id_evento
+        , id_thread
+        , palabras_clave
+        , min(fecha_post)                               as fecha_primera_mencion
+        , count(*)                                      as n_posts_mencionan
+        , max(_loaded_at)                               as _loaded_at
+    from posts_que_mencionan
+    group by id_evento, id_thread, palabras_clave
 
 )
 
@@ -58,5 +110,7 @@ select
     , id_thread
     , id_evento
     , palabras_clave
+    , fecha_primera_mencion
+    , n_posts_mencionan
     , _loaded_at
 from coincidencias
