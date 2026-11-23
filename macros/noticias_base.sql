@@ -5,9 +5,23 @@
     IDs se calculan igual en los cuatro y no hay tabla ni vista intermedia.
 #}
 
-{# URL normalizada: minúsculas, sin espacios, 'http:/' -> 'https://', sin '/' final. #}
+{#
+    URL normalizada, para que una misma noticia no cuente dos veces:
+      - minúsculas y sin espacios;
+      - siempre 'https://www.' (con o sin www, 'http:/', 'HTTP:/'...);
+      - sin parámetros de seguimiento (?utm_source=...&utm_medium=...): si eso es
+        lo único que cambia, queda la URL corta;
+      - sin '/' final.
+    Otros parámetros (?id=7) se conservan. Una URL vacía da NULL.
+#}
 {% macro clave_url(columna) -%}
-    regexp_replace(regexp_replace(nullif(lower(trim({{ columna }})), ''), '^https?:/+', 'https://'), '/+$', '')
+    case when nullif(trim({{ columna }}), '') is not null
+         then 'https://www.' || regexp_replace(
+                  regexp_replace(
+                      regexp_replace(lower(trim({{ columna }})), '[?&]utm_.*$', '')
+                    , '^(https?:/+)?(www\\.)?', '')
+                , '/+$', '')
+    end
 {%- endmacro %}
 
 

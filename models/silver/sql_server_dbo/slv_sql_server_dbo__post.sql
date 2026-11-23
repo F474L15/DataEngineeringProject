@@ -7,6 +7,8 @@
     - El merge solo compara contra los últimos `merge_ventana_dias` días de la
       tabla (ver predicado_merge). Un id_post que reaparezca después quedaría
       duplicado: lo detecta el test de unicidad.
+    - Elimina los posts cuya fecha no es válida (ilegible, anterior a la fecha
+      mínima o futura): no se puede saber cuándo se escribieron ni sanearlos.
     - post_padre se guarda tal cual llega (puede ser NULL). El post raíz del thread
       se calcula en slv_thread y dim_post rellena con él los vacíos.
     Columnas del modelo (ID_Post, ID_Thread, ID_Usuario, Name_Usuario, Comment,
@@ -19,6 +21,13 @@
     incremental_predicates=predicado_merge()
 ) }}
 
+with validos as (
+
+    select * from {{ ref('stg_sql_server_dbo__post') }}
+    where {{ fecha_es_valida('fecha_post') }}
+
+)
+
 select
       id_post
     , id_thread
@@ -29,7 +38,7 @@ select
     , post_padre
     , fecha_post
     , _loaded_at
-from {{ ref('stg_sql_server_dbo__post') }}
+from validos
 {{ filtro_incremental() }}
 qualify row_number() over (
     partition by id_post

@@ -70,7 +70,7 @@ models:
 
   - name: slv_sql_server_dbo__evento
     description: >
-      Evento. Incremental por id_evento (pocas filas: el merge compara contra toda la tabla). Conserva los eventos casi duplicados con IDs distintos; la regla de deduplicación está pendiente.
+      Evento. Incremental por id_evento (pocas filas: el merge compara contra toda la tabla). Elimina los eventos sin fecha válida (ilegible, anterior a la fecha mínima o futura). Los eventos casi duplicados ya se fusionan en staging.
     columns:
       - name: id_evento
         tests:
@@ -306,6 +306,44 @@ unit_tests:
         - {id_post: 103, comment: nuevo}
         - {id_post: 104, comment: fecha reciente}
         - {id_post: 105, comment: unico}
+
+  - name: test_slv_post_descarta_fecha_invalida
+    description: >
+      Un post sin fecha, con fecha futura o anterior a la fecha mínima se elimina:
+      no se puede saber cuándo se escribió ni sanearlo.
+    model: slv_sql_server_dbo__post
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__post')
+        rows:
+          - {id_post: 201, fecha_post: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 202, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 203, fecha_post: '2099-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 204, fecha_post: '2000-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 201}
+
+  # ---------------------------------------------------------------- EVENTO
+  - name: test_slv_evento_descarta_fecha_invalida
+    description: >
+      Un evento sin fecha, con fecha futura o anterior a la fecha mínima se elimina.
+    model: slv_sql_server_dbo__evento
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__evento')
+        rows:
+          - {id_evento: 1, fecha_evento: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 2, fecha_evento: '2099-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 3, fecha_evento: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 4, fecha_evento: '2000-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1}
 
   # ---------------------------------------------------------------- THREAD
   - name: test_slv_thread_raiz_y_titulo

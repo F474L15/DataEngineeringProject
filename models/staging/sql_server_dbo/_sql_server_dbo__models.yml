@@ -19,7 +19,7 @@ models:
         tests: [not_null]
 
   - name: stg_sql_server_dbo__evento
-    description: Evento limpio, uno por id_evento (tabla pequeña, se deduplica aquí).
+    description: Evento limpio, uno por id_evento y sin casi duplicados (mismo título sin distinguir mayúsculas y misma fecha). Tabla pequeña, se deduplica aquí.
     columns:
       - name: id_evento
         tests: [unique, not_null]
@@ -124,6 +124,32 @@ unit_tests:
         - {id_evento: 1, evento: Version nueva}
         - {id_evento: 2, evento: Fecha reciente}
 
+  - name: test_stg_evento_fusiona_mayusculas
+    description: >
+      Dos eventos con el mismo título (sin distinguir mayúsculas) y la misma fecha
+      dejan uno: el de descripción más larga y, a igualdad, el de menor id. Otra
+      fecha, o un título que difiere en algo más que las mayúsculas (una tilde),
+      no se fusiona.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        rows:
+          - {id_evento: '1', evento: Cumbre del clima, fecha_evento: '2020-01-01 10:00:00', descripcion: corta,                 _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '2', evento: CUMBRE DEL CLIMA, fecha_evento: '2020-01-01 10:00:00', descripcion: descripcion mas larga, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '3', evento: Otro,             fecha_evento: '2020-01-01 10:00:00', descripcion: igual,                 _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '4', evento: otro,             fecha_evento: '2020-01-01 10:00:00', descripcion: igual,                 _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '5', evento: Cumbre del clima, fecha_evento: '2021-01-01 10:00:00', descripcion: otra fecha,            _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '6', evento: Cumbre del clíma, fecha_evento: '2020-01-01 10:00:00', descripcion: con tilde,             _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 2, evento: CUMBRE DEL CLIMA}
+        - {id_evento: 3, evento: Otro}
+        - {id_evento: 5, evento: Cumbre del clima}
+        - {id_evento: 6, evento: Cumbre del clíma}
+
   # ------------------------------------------------------------- PERIODICO
 
   # ------------------------------------------------------------------ POST
@@ -149,6 +175,52 @@ unit_tests:
         - {id_post: 100, id_tablon: 1, id_usuario: ' ', post_padre: null}
         - {id_post: 100, id_tablon: 1, id_usuario: u1,  post_padre: null}
         - {id_post: 200, id_tablon: 2, id_usuario: u5,  post_padre: 100}
+
+  # --------------------------------------------------------------- NOTICIA
+  - name: test_stg_noticia_url_normalizada
+    description: >
+      La url queda en minúsculas, con https://www. (con o sin www, con 'http:/' o
+      en mayúsculas) y sin parámetros de seguimiento utm: dos variantes de la misma
+      noticia dan la misma url corta. Otros parámetros se conservan y una url vacía
+      sale NULL.
+    model: stg_sql_server_dbo__noticia
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'noticias')
+        rows:
+          - {titular: t1, url: 'HTTP:/WWW.DIARIO.EXAMPLE/A-1',                                                _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t2, url: 'diario.example/b-2',                                                          _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t3, url: 'https://www.diario.example/c-3?utm_source=twitter&utm_medium=social',         _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t4, url: 'https://www.diario.example/c-3?utm_source=twitter&utm_medium=social-copia',   _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t5, url: 'https://www.diario.example/d-4?id=7',                                         _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t6, url: null,                                                                          _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {titular: t1, url: 'https://www.diario.example/a-1'}
+        - {titular: t2, url: 'https://www.diario.example/b-2'}
+        - {titular: t3, url: 'https://www.diario.example/c-3'}
+        - {titular: t4, url: 'https://www.diario.example/c-3'}
+        - {titular: t5, url: 'https://www.diario.example/d-4?id=7'}
+        - {titular: t6, url: null}
+
+  # ---------------------------------------------------------------- THREAD
+  - name: test_stg_thread_solo_fechas_validas
+    description: >
+      Solo pasan los posts con fecha válida (existe, no es anterior a la fecha
+      mínima ni futura), los mismos que conserva slv_post.
+    model: stg_sql_server_dbo__thread
+    given:
+      - input: ref('stg_sql_server_dbo__post')
+        rows:
+          - {id_post: 1, id_thread: 7, fecha_post: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 2, id_thread: 7, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 3, id_thread: 7, fecha_post: '2099-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 4, id_thread: 7, fecha_post: '2000-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 1}
 
   # ------------------------------------------------------------ PERIODISTA
   - name: test_stg_periodista_email_valido
