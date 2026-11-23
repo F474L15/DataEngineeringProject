@@ -109,3 +109,216 @@ models:
               arguments:
                 to: ref('stg_sql_server_dbo__periodista')
                 field: id_periodista
+
+# =============================================================================
+# Tests unitarios de staging (dbt >= 1.8): filas dadas -> filas esperadas, sin
+# tocar los datos reales. Las relaciones de entrada (source, seed, ref) tienen
+# que existir en Snowflake para que dbt conozca los tipos de las columnas; las
+# columnas no indicadas valen NULL. En `expect`, todas las filas deben llevar las
+# mismas columnas (si no, Snowflake falla al unir real y esperado). Los ID basados en HASH no se comprueban (no
+# se pueden calcular a mano): cada fila se identifica por sus columnas de negocio.
+#   dbt test --select test_type:unit
+#   dbt test --select "stg_sql_server_dbo__evento,test_type:unit"
+# =============================================================================
+unit_tests:
+
+  # ---------------------------------------------------------------- EVENTO
+  # Fixtures CSV (tests/fixtures/stg_evento__fechas_*.csv) para probar muchos
+  # formatos de fecha de una vez; el resto de tests llevan las filas inline.
+  - name: test_stg_evento_parse_fecha
+    description: >
+      parse_fecha reconoce cada formato de origen (ISO, ISO con T/Z, YYYYMMDD,
+      época Unix, dd/mm/yyyy con y sin hora, dd-mm-yyyy, dd-mm-yy, "dd Mon yyyy",
+      "Mon dd, yyyy" con y sin hora AM/PM, "Month dd, yyyy" y solo el año) y
+      devuelve NULL con una fecha imposible (31/02, mes 14) o sin formato.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        format: csv
+        fixture: stg_evento__fechas_cases
+    expect:
+      format: csv
+      fixture: stg_evento__fechas_expected
+
+  - name: test_stg_evento_categoria_y_nulos
+    description: >
+      La categoría se reconduce al seed (Política Nacional -> política) y, si falta
+      o no se reconoce, cae en 'sin categoria' (id 16). Los textos sin dato valen ' '
+      (gobernanza). La ubicación N/A queda en blanco y la ubicación en mayúsculas
+      pasa a Initcap.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 2,  categoria_clave: politica}
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        rows:
+          - {id_evento: '1', evento: '  Caso   Epstein  ', categoria: Política Nacional, ubicacion: N/A,             descripcion: null, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '2', evento: Evento B,             categoria: Algo raro,          ubicacion: MADRID - ESPAÑA, descripcion: Texto, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '3', evento: Evento C,             categoria: null,               ubicacion: Sevilla,        descripcion: Texto, _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, evento: Caso Epstein, evento_clave: caso epstein, id_categoria: 2,  ubicacion: ' ',              descripcion: ' '}
+        - {id_evento: 2, evento: Evento B,     evento_clave: evento b,     id_categoria: 16, ubicacion: 'Madrid, España', descripcion: Texto}
+        - {id_evento: 3, evento: Evento C,     evento_clave: evento c,     id_categoria: 16, ubicacion: Sevilla,          descripcion: Texto}
+
+  - name: test_stg_evento_deduplica
+    description: >
+      Un id_evento repetido deja una sola fila: la de _loaded_at más reciente y,
+      a igualdad de carga, la de fecha_evento más reciente.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        rows:
+          - {id_evento: '1', evento: Version vieja, fecha_evento: '2020-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '1', evento: Version nueva, fecha_evento: '2020-01-01 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_evento: '2', evento: Fecha antigua, fecha_evento: '2020-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '2', evento: Fecha reciente, fecha_evento: '2021-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, evento: Version nueva}
+        - {id_evento: 2, evento: Fecha reciente}
+
+  # ------------------------------------------------------------- PERIODICO
+  - name: test_stg_periodico_agrupa_grafias
+    description: >
+      Las grafías de un mismo periódico (mayúsculas, tildes, espacios y sufijo
+      S.L.) dan una sola fila, con el nombre más frecuente y la fecha de creación
+      parseada.
+    model: stg_sql_server_dbo__periodico
+    given:
+      - input: source('bronze', 'noticias')
+        rows:
+          - {titular: a, nombre_periodico: El País,        fecha_creacion_periodico: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: b, nombre_periodico: El País,        fecha_creacion_periodico: '04/05/1976',          _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: c, nombre_periodico: EL PAÍS,        fecha_creacion_periodico: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: d, nombre_periodico: ' el pais ',    fecha_creacion_periodico: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: e, nombre_periodico: El País S.L.,   fecha_creacion_periodico: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: f, nombre_periodico: La Razón,       fecha_creacion_periodico: '1998-11-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: g, nombre_periodico: La Razón,       fecha_creacion_periodico: '1998-11-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: h, nombre_periodico: LA RAZON S.L.,  fecha_creacion_periodico: '1998-11-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {nombre: El País,  fecha_creacion: '1976-05-04 00:00:00'}
+        - {nombre: La Razón, fecha_creacion: '1998-11-04 00:00:00'}
+
+  # ------------------------------------------------------------ PERIODISTA
+  - name: test_stg_periodista_nombre_apellidos_intercambiados
+    description: >
+      Nombre y apellidos intercambiados en origen dan el mismo periodista. El email
+      sin formato válido se descarta (NULL, no ' '), y la biografía sin dato vale ' '.
+    model: stg_sql_server_dbo__periodista
+    given:
+      - input: source('bronze', 'noticias')
+        rows:
+          - {titular: a, nombre_periodista: Alba,        apellidos_periodista: Montoro Pla, email_periodista: ALBA@x.es,  _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: b, nombre_periodista: Alba,        apellidos_periodista: Montoro Pla, email_periodista: alba#x.es,  _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: c, nombre_periodista: Montoro Pla, apellidos_periodista: Alba,        email_periodista: alba@x,     _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: d, nombre_periodista: Luis,        apellidos_periodista: Gil,         email_periodista: luis.gil,   _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {nombre: Alba, apellidos: Montoro Pla, email: alba@x.es, biografia: ' '}
+        - {nombre: Luis, apellidos: Gil,         email: null,      biografia: ' '}
+
+  # ------------------------------------------------------------------ POST
+  - name: test_stg_post_deduplica_y_post_padre
+    description: >
+      Dedupe por id_post (carga más reciente; a igualdad, fecha más reciente),
+      post_padre vacío = post más antiguo del thread (el raíz se apunta a sí mismo),
+      id_usuario sin dato = ' ' y tablón con errata resuelto por nombre.
+    model: stg_sql_server_dbo__post
+    given:
+      - input: ref('tablones')
+        rows:
+          - {id_tablon: 1, name_tablon: Politically Incorrect, siglas: /pol/}
+          - {id_tablon: 2, name_tablon: International,         siglas: /int/}
+      - input: source('bronze', 'posts_4chan')
+        rows:
+          - {id_post: 100, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: raiz,   id_usuario: null, post_padre: null,  fecha_post: '2026-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 101, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: hijo,   id_usuario: u1,   post_padre: '100', fecha_post: '2026-01-01 11:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 102, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: huerfano, id_usuario: u2, post_padre: null,  fecha_post: '2026-01-01 12:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 103, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: viejo, id_usuario: u3,   post_padre: '100', fecha_post: '2026-01-01 12:30:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 103, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: nuevo, id_usuario: u3,   post_padre: '100', fecha_post: '2026-01-01 12:30:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_post: 104, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: fecha antigua,   id_usuario: u4, post_padre: '100', fecha_post: '2026-01-01 12:40:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 104, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: fecha reciente, id_usuario: u4, post_padre: '100', fecha_post: '2026-01-01 13:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 200, name_tablon: Intrnational,          siglas: /pol/, titulo_thread: Hilo B, comment: errata, id_usuario: u5, post_padre: null,  fecha_post: '2026-01-02 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 100, post_padre: 100, id_usuario: ' ', id_tablon: 1, comment: raiz}
+        - {id_post: 101, post_padre: 100, id_usuario: u1,  id_tablon: 1, comment: hijo}
+        - {id_post: 102, post_padre: 100, id_usuario: u2,  id_tablon: 1, comment: huerfano}
+        - {id_post: 103, post_padre: 100, id_usuario: u3,  id_tablon: 1, comment: nuevo}
+        - {id_post: 104, post_padre: 100, id_usuario: u4,  id_tablon: 1, comment: fecha reciente}
+        - {id_post: 200, post_padre: 200, id_usuario: u5,  id_tablon: 2, comment: errata}
+
+  # ------------------------------------------------- MENCIONA EVENTO NOTICIA
+  - name: test_stg_menciona_evento_noticia_regla
+    description: >
+      Una noticia menciona un evento si contiene TODAS sus palabras clave o al
+      menos UNA distintiva. Si el evento tiene el token 4chan (por su descripción),
+      la noticia debe contener 4chan. Las palabras se comparan enteras.
+        ev1 'caso epstein' (+4chan): epstein es distintiva.
+        ev2 'huelga general': general es distintiva; huelga la comparte con ev3.
+        ev3 'huelga transporte': transporte es distintiva.
+        ev4 'caso gil': ninguna distintiva, hacen falta las dos palabras.
+    model: stg_sql_server_dbo__menciona_evento_noticia
+    given:
+      - input: ref('stg_sql_server_dbo__evento')
+        rows:
+          - {id_evento: 1, evento_clave: caso epstein,      descripcion: filtrado en 4chan, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 2, evento_clave: huelga general,    descripcion: ' ',               _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 3, evento_clave: huelga transporte, descripcion: ' ',               _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 4, evento_clave: caso gil,          descripcion: ' ',               _loaded_at: '2026-01-01 00:00:00'}
+      - input: ref('stg_sql_server_dbo__noticia')
+        rows:
+          # ev1: epstein (distintiva) + 4chan -> sí, aunque falte 'caso'
+          - {id_noticia: 10, titular: Epstein y 4chan,           subtitulo: ' ', cuerpo: ' ', _loaded_at: '2026-01-01 00:00:00'}
+          # ev1 exige 4chan: sin 4chan no hay mención. ev4: solo 'caso' -> no
+          - {id_noticia: 11, titular: Caso Epstein,              subtitulo: ' ', cuerpo: ' ', _loaded_at: '2026-01-01 00:00:00'}
+          # 'huelga' sola no basta (no es distintiva ni son todas)
+          - {id_noticia: 12, titular: Nueva huelga,              subtitulo: ' ', cuerpo: ' ', _loaded_at: '2026-01-01 00:00:00'}
+          # ev3: huelga + transporte (también distintiva)
+          - {id_noticia: 13, titular: Gran huelga de transporte, subtitulo: ' ', cuerpo: ' ', _loaded_at: '2026-01-01 00:00:00'}
+          # ev4: todas las palabras; 4chan no es obligatorio si el evento no lo tiene.
+          # ev1: caso + 4chan pero sin epstein -> no
+          - {id_noticia: 14, titular: Caso Gil en 4chan,         subtitulo: ' ', cuerpo: ' ', _loaded_at: '2026-01-01 00:00:00'}
+          # ev2: general es distintiva (la palabra va entera, en el cuerpo)
+          - {id_noticia: 15, titular: ' ',                       subtitulo: ' ', cuerpo: El general dijo, _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, id_noticia: 10, palabras_clave: '4chan, epstein'}
+        - {id_evento: 3, id_noticia: 13, palabras_clave: 'huelga, transporte'}
+        - {id_evento: 4, id_noticia: 14, palabras_clave: 'caso, gil'}
+        - {id_evento: 2, id_noticia: 15, palabras_clave: general}
+
+  # -------------------------------------------------- MENCIONA EVENTO THREAD
+  - name: test_stg_menciona_evento_thread_regla
+    description: >
+      Mismas reglas de palabras que MEN, pero 4chan NO es obligatorio (ni cuenta
+      como palabra). Se evalúa por post y se agrupa por (evento, thread), con la
+      primera mención y el número de posts que mencionan el evento.
+    model: stg_sql_server_dbo__menciona_evento_thread
+    given:
+      - input: ref('stg_sql_server_dbo__evento')
+        rows:
+          - {id_evento: 1, evento_clave: caso epstein, descripcion: filtrado en 4chan, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 4, evento_clave: caso gil,     descripcion: ' ',               _loaded_at: '2026-01-01 00:00:00'}
+      - input: ref('stg_sql_server_dbo__post')
+        rows:
+          - {id_post: 1, id_thread: 500, titulo_thread: Hilo, comment: epstein files,   fecha_post: '2026-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 2, id_thread: 500, titulo_thread: Hilo, comment: el caso epstein, fecha_post: '2026-01-01 11:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 3, id_thread: 501, titulo_thread: Otro, comment: caso gil,        fecha_post: '2026-01-01 09:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 4, id_thread: 501, titulo_thread: Otro, comment: epstein,         fecha_post: '2026-01-01 12:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 5, id_thread: 502, titulo_thread: Nada, comment: caso cerrado,    fecha_post: '2026-01-01 08:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, id_thread: 500, palabras_clave: 'caso, epstein', fecha_primera_mencion: '2026-01-01 10:00:00', n_posts_mencionan: 2}
+        - {id_evento: 1, id_thread: 501, palabras_clave: epstein,        fecha_primera_mencion: '2026-01-01 12:00:00', n_posts_mencionan: 1}
+        - {id_evento: 4, id_thread: 501, palabras_clave: 'caso, gil',     fecha_primera_mencion: '2026-01-01 09:00:00', n_posts_mencionan: 1}

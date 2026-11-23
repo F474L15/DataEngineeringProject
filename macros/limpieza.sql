@@ -102,3 +102,23 @@
         else {{ clave_texto(columna) }}
     end
 {%- endmacro %}
+
+
+{#
+    Gobernanza: un texto nulo pasa a ' ' (un espacio). Se aplica en staging, en el
+    select final, DESPUÉS de calcular claves e ids, porque las claves necesitan el
+    null para distinguir "sin dato". No se usa con ids, fechas ni booleanos: un ' '
+    no cabe en una columna numérica o de fecha. url y email se quedan en NULL.
+#}
+{% macro texto_o_blanco(columna) -%}
+    coalesce({{ columna }}, ' ')
+{%- endmacro %}
+
+
+{# Una fecha es válida si existe, no es anterior a la fecha mínima ni futura.
+   Mínima ajustable con --vars '{fecha_minima_valida: 2005-01-01}'. #}
+{% macro fecha_es_valida(columna) -%}
+    ({{ columna }} is not null
+     and {{ columna }} >= '{{ var("fecha_minima_valida", "2009-01-01") }}'::timestamp_ntz
+     and {{ columna }} <= sysdate())
+{%- endmacro %}
