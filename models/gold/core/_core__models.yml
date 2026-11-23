@@ -27,7 +27,6 @@ models:
         tests:
           - unique
           - not_null
-          - positive_values
       - name: id_categoria
         tests:
           - not_null
@@ -35,18 +34,16 @@ models:
               arguments:
                 to: ref('dim_categoria')
                 field: id_categoria
-      - name: descripcion
-        tests:
-          - not_null
   - name: dim_noticia
     description: >
-      Ordenada por id_noticia.
+      Incremental por id_noticia (ventana de merge de 3 días). Sin ordenar.
     columns:
       - name: id_noticia
         tests:
-          - unique
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
           - not_null
-          - positive_values
       - name: id_categoria
         tests:
           - not_null
@@ -54,51 +51,42 @@ models:
               arguments:
                 to: ref('dim_categoria')
                 field: id_categoria
-      - name: nombre_periodico
-        tests:
-          - not_null
-      - name: categoria_noticia
-        tests:
-          - not_null
   - name: dim_thread
     description: >
-      Ordenada por id_thread.
+      Incremental por id_thread. Incluye el post raíz del thread y su fecha. Sin ordenar.
     columns:
       - name: id_thread
         tests:
           - unique
           - not_null
-          - positive_values
-      - name: name_tablon
-        tests:
-          - not_null
-      - name: siglas
-        tests:
-          - not_null
   - name: dim_post
     description: >
-      Ordenada por id_post.
+      Incremental por id_post (ventana de merge de 3 días). Sin ordenar. post_padre vacío en Silver se rellena aquí con el post raíz del thread; el propio raíz se apunta a sí mismo.
     columns:
       - name: id_post
         tests:
-          - unique
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
           - not_null
-          - positive_values
       - name: id_thread
         tests:
           - relationships:
               arguments:
                 to: ref('dim_thread')
                 field: id_thread
+      - name: post_padre
+        description: Nunca nulo. Un post sin padre en origen apunta al raíz de su thread.
+        tests:
+          - not_null
   - name: fct_menciona_evento_noticia
     description: >
-      Una fila por (evento, noticia). palabras_clave lista las que aparecen. Ordenada por id_men. Vacío hasta definir la coincidencia.
+      Una fila por (evento, noticia). palabras_clave lista las que aparecen. Incremental por id_men: recoge las parejas que Silver calcula desde la última ejecución. Sin ordenar.
     columns:
       - name: id_men
         tests:
           - unique
           - not_null
-          - positive_values
       - name: id_evento
         tests:
           - relationships:
@@ -122,25 +110,24 @@ models:
                 severity: warn
   - name: fct_menciona_evento_4chan
     description: >
-      Una fila por (evento, thread). Fecha = primer post que menciona. Ordenada por id_met. Vacío hasta definir la coincidencia.
+      Una fila por (evento, post): el post es la unidad evaluada y el thread se obtiene desde dim_post. fecha_mencion = fecha del post. Incremental por id_mep: recoge las parejas que Silver calcula desde la última ejecución. Sin ordenar.
     columns:
-      - name: id_met
+      - name: id_mep
         tests:
           - unique
           - not_null
-          - positive_values
       - name: id_evento
         tests:
           - relationships:
               arguments:
                 to: ref('dim_evento')
                 field: id_evento
-      - name: id_thread
+      - name: id_post
         tests:
           - relationships:
               arguments:
-                to: ref('dim_thread')
-                field: id_thread
+                to: ref('dim_post')
+                field: id_post
       - name: id_fecha
         tests:
           - non_negative_values

@@ -1,7 +1,8 @@
 {#
-    Escribe: relación noticia-periodista con la marca de autor principal.
-    autor_principal llega con 11 grafías (TRUE, S, 1, verdadero, Sí...) y se
-    convierte a boolean; un valor desconocido queda en NULL.
+    Escribe, fila a fila: relación noticia-periodista con la marca de autor
+    principal. autor_principal llega con 11 grafías (TRUE, S, 1, verdadero, Sí...)
+    y se convierte a boolean; un valor desconocido queda en NULL. La
+    deduplicación por (noticia, periodista) vive en slv_escribe.
 #}
 
 with base as (
@@ -17,7 +18,3 @@ select
     , {{ a_booleano('autor_principal') }}                    as autor_principal
     , _loaded_at
 from base
-qualify row_number() over (
-    partition by id_noticia, id_periodista
-    order by _loaded_at desc
-) = 1

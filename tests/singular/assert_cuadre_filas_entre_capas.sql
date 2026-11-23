@@ -1,9 +1,15 @@
+{{ config(tags=['pesado']) }}
+
 {#
     Cuadre de filas entre capas. Devuelve una fila por cada comparación que no
     cuadra (el test falla si hay alguna).
 
       Bronze -> Silver : las claves distintas de Bronze son las de Silver.
       Silver -> Gold   : cada dimensión tiene tantas filas como su Silver.
+      Hechos           : cada hecho tiene tantas filas como su MEN o MEP de Silver.
+                         Los hechos hacen inner join a las dimensiones: si una
+                         clave no existe en la dimensión, la fila se descarta sin
+                         error, y esto lo detecta.
 
     Solo cuadra si Silver está al día con Bronze: tras cargar ficheros nuevos,
     ejecuta dbt antes de mirar este test.
@@ -97,3 +103,17 @@ select 'silver post -> silver thread', entidad, n_a, n_b from hilos where n_a <>
 union all
 
 select 'silver thread -> dim_thread', entidad, n_b, n_c from hilos where n_b <> n_c
+
+union all
+
+select 'silver -> gold (hecho)', 'menciona_evento_noticia', s.n, g.n
+from (select count(*) as n from {{ ref('slv_sql_server_dbo__menciona_evento_noticia') }}) s
+cross join (select count(*) as n from {{ ref('fct_menciona_evento_noticia') }}) g
+where s.n <> g.n
+
+union all
+
+select 'silver -> gold (hecho)', 'menciona_evento_post', s.n, g.n
+from (select count(*) as n from {{ ref('slv_sql_server_dbo__menciona_evento_post') }}) s
+cross join (select count(*) as n from {{ ref('fct_menciona_evento_4chan') }}) g
+where s.n <> g.n

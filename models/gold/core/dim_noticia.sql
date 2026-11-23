@@ -1,3 +1,11 @@
+{# Noticia · Gold. Incremental por id_noticia, con la misma ventana de merge que Silver. #}
+
+{{ config(
+    materialized='incremental',
+    unique_key='id_noticia',
+    incremental_predicates=predicado_merge()
+) }}
+
 select
       n.id_noticia
     , n.id_periodico
@@ -10,7 +18,8 @@ select
     , coalesce(c.categoria, ' ')        as categoria_noticia
     , n.fecha_publicacion
     , {{ fecha_es_valida('n.fecha_publicacion') }} as fecha_publicacion_valida
+    , n._loaded_at
 from {{ ref('slv_sql_server_dbo__noticia') }} n
 left join {{ ref('slv_sql_server_dbo__periodico') }} p on p.id_periodico = n.id_periodico
 left join {{ ref('categorias') }} c on c.id_categoria = n.id_categoria
-order by n.id_noticia
+{{ filtro_incremental('n._loaded_at', '_loaded_at') }}

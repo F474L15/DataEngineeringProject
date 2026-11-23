@@ -1,7 +1,10 @@
 {#
-    Noticia limpia. Entidad Noticia del modelo. noticias.csv trae una fila por
-    noticia y periodista, así que se deduplica por id_noticia (URL normalizada).
-    cuerpo es la columna `desarrollo` del CSV.
+    Noticia limpia, fila a fila. Entidad Noticia del modelo. noticias.csv trae una
+    fila por noticia y periodista. cuerpo es la columna `desarrollo` del CSV.
+
+    Vista sin deduplicar ni agrupar, para que el filtro `_loaded_at` de Silver llegue
+    a Bronze (ver stg_sql_server_dbo__post). La deduplicación por id_noticia
+    (URL normalizada) vive en slv_noticia.
 #}
 
 with base as (
@@ -33,7 +36,3 @@ left join categorias c
 -- Sin categoría o categoría no reconocida: la fila 'sin categoria' del seed.
 left join categorias sc
     on sc.categoria_clave = 'sin categoria'
-qualify row_number() over (
-    partition by b.id_noticia
-    order by b._loaded_at desc, b.fecha_publicacion desc nulls last, b.titular nulls last
-) = 1

@@ -1,7 +1,7 @@
 {#
-    Periódico. Entidad Periodico del modelo (ID_Periodico, Nombre, fecha_creacion).
-    En origen hay 10 grafías de 5 periódicos (mayúsculas, espacios y sufijo S.L.).
-    El nombre y la fecha de creación son los valores más frecuentes de cada uno.
+    Periódico, fila a fila: una fila por fila de noticias.csv (hay 10 grafías de
+    5 periódicos; la clave las unifica). El nombre y la fecha de creación más
+    frecuentes se eligen en slv_periodico, con un agregado sobre el lote.
 #}
 
 with base as (
@@ -12,8 +12,7 @@ with base as (
 
 select
       id_periodico
-    , coalesce(mode({{ limpiar_texto('nombre_periodico') }}), ' ')      as nombre
-    , mode({{ parse_fecha('fecha_creacion_periodico') }})                as fecha_creacion
-    , max(_loaded_at)                                                    as _loaded_at
+    , {{ limpiar_texto('nombre_periodico') }}                as nombre
+    , {{ parse_fecha('fecha_creacion_periodico') }}          as fecha_creacion
+    , _loaded_at
 from base
-group by id_periodico

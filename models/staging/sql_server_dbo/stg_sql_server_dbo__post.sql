@@ -1,13 +1,19 @@
 {#
-    Post de 4chan limpio. Entidad Post del modelo (ID_Post, ID_Thread, ...).
+    Post de 4chan limpio, fila a fila. Entidad Post del modelo.
+
+    Es una vista SIN deduplicar, sin funciones de ventana y sin agregados, a
+    propósito: así Snowflake empuja el filtro `_loaded_at` de Silver hasta Bronze y
+    solo lee el lote nuevo (≈ 7.000 posts cada 10 minutos, no toda la historia).
+    La deduplicación por id_post vive en slv_post y el post_padre vacío se rellena
+    en dim_post, porque ambos necesitan más filas que las de la fila actual.
 
     - El tablón se resuelve por el nombre, que solo tiene erratas ('Intrnational'),
-      acercándolo al tablón más parecido del seed (distancia de edición <= 3).
-      Las siglas se usan solo si el nombre no resuelve: traen valores de otro
-      tablón (p. ej. 'Science & Math' con '/pol/') en unas 80 filas.
+      acercándolo al tablón más parecido del seed (distancia de edición <= 3). Las
+      siglas se usan solo si el nombre no resuelve: traen valores de otro tablón
+      (p. ej. 'Science & Math' con '/pol/') en unas 80 filas. El seed tiene pocas
+      filas, así que la comparación es barata aunque se haga por fila.
     - id_thread: hash de (tablón, título normalizado). El mismo título existe en
       varios tablones, así que el título solo no identifica un thread.
-    - Deduplica por id_post y se queda con la carga más reciente.
 #}
 
 with src as (
@@ -26,28 +32,6 @@ tablones as (
 
 ),
 
-variantes_nombre as (
-
-    select distinct {{ clave_texto('name_tablon') }} as nombre_clave
-    from src
-
-),
-
-tablon_por_nombre as (
-
-    select
-          v.nombre_clave    as variante
-        , t.id_tablon
-    from variantes_nombre v
-    cross join tablones t
-    where editdistance(v.nombre_clave, t.nombre_clave) <= 3
-    qualify row_number() over (
-        partition by v.nombre_clave
-        order by editdistance(v.nombre_clave, t.nombre_clave), t.id_tablon
-    ) = 1
-
-),
-
 limpio as (
 
     select
@@ -63,42 +47,16 @@ limpio as (
         , {{ parse_fecha('s.fecha_post') }}                              as fecha_post
         , s._loaded_at
     from src s
-    left join tablon_por_nombre tn
-        on tn.variante = {{ clave_texto('s.name_tablon') }}
+    left join tablones tn
+        on editdistance({{ clave_texto('s.name_tablon') }}, tn.nombre_clave) <= 3
     left join tablones ts
         on ts.siglas_clave = regexp_replace(lower(s.siglas), '[^a-z]', '')
 
 )
 
-,
-
-deduplicado as (
-
-    select
-          id_post
-        , abs(hash(id_tablon, titulo_clave))    as id_thread
-        , id_tablon
-        , titulo_thread
-        , titulo_clave
-        , id_usuario
-        , name_usuario
-        , comment
-        , image
-        , post_padre
-        , fecha_post
-        , _loaded_at
-    from limpio
-    qualify row_number() over (
-        partition by id_post
-        order by _loaded_at desc, fecha_post desc nulls last
-               , hash(comment, name_usuario, id_usuario, post_padre)
-    ) = 1
-
-)
-
 select
       id_post
-    , id_thread
+    , abs(hash(id_tablon, titulo_clave))         as id_thread
     , id_tablon
     , {{ texto_o_blanco('titulo_thread') }}      as titulo_thread
     , titulo_clave
@@ -106,15 +64,7 @@ select
     , {{ texto_o_blanco('name_usuario') }}       as name_usuario
     , {{ texto_o_blanco('comment') }}            as comment
     , {{ texto_o_blanco('image') }}              as image
-    -- Gobernanza: un post sin padre apunta al post más antiguo de su thread
-    -- (el propio post raíz se apunta a sí mismo).
-    , coalesce(
-          post_padre
-        , first_value(id_post) over (
-              partition by id_thread
-              order by fecha_post asc nulls last, id_post asc
-          )
-      )                                          as post_padre
+    , post_padre
     , fecha_post
     , _loaded_at
-from deduplicado
+from limpio

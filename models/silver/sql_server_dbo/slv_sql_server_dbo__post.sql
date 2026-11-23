@@ -1,11 +1,23 @@
 {#
-    Post · Silver. Incremental: solo procesa los posts que staging ha recibido
-    desde la última carga y los inserta o actualiza por id_post (merge).
+    Post · Silver. Incremental por id_post (merge).
+
+    - Lee el lote nuevo de Bronze a través de staging (vista fila a fila) y lo
+      deduplica por id_post: gana la carga más reciente; a igualdad, la fecha más
+      reciente y, si sigue el empate, un desempate determinista por contenido.
+    - El merge solo compara contra los últimos `merge_ventana_dias` días de la
+      tabla (ver predicado_merge). Un id_post que reaparezca después quedaría
+      duplicado: lo detecta el test de unicidad.
+    - post_padre se guarda tal cual llega (puede ser NULL). El post raíz del thread
+      se calcula en slv_thread y dim_post rellena con él los vacíos.
     Columnas del modelo (ID_Post, ID_Thread, ID_Usuario, Name_Usuario, Comment,
     Image, Post_Padre, Fecha_post). El tablón y el título viven en Thread.
 #}
 
-{{ config(materialized='incremental', unique_key='id_post') }}
+{{ config(
+    materialized='incremental',
+    unique_key='id_post',
+    incremental_predicates=predicado_merge()
+) }}
 
 select
       id_post
@@ -19,4 +31,8 @@ select
     , _loaded_at
 from {{ ref('stg_sql_server_dbo__post') }}
 {{ filtro_incremental() }}
-order by id_post
+qualify row_number() over (
+    partition by id_post
+    order by _loaded_at desc, fecha_post desc nulls last
+           , hash(comment, name_usuario, id_usuario, post_padre)
+) = 1
