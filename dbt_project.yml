@@ -1,3 +1,4 @@
+
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
@@ -61,7 +62,8 @@ models:
 # macros/palabras_clave.sql). Se pueden cambiar por ejecución con --vars.
 vars:
   incremental_margen_minutos: 30      # margen que se resta a la última marca de carga
-  merge_ventana_dias: 3               # días de la tabla destino que compara el merge
+  merge_ventana_dias: 36500           # días de la tabla destino que compara el merge. Alto = una ejecución repetida no duplica
+                                      # (el filtro relee el último lote). Bajar a 3 solo con cargas nuevas y frecuentes.
   ventana_dias_antes_evento: 7        # un texto puede ser hasta 7 días anterior al evento
   ventana_dias_despues_evento: 90     # y hasta 90 días posterior
   buscar_eventos_nuevos: false        # true en el job diario: eventos nuevos contra el histórico
