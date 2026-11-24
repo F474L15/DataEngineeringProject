@@ -18,9 +18,11 @@
     predicado_merge(dias)
       Para las tablas grandes (post, noticia, escribe y sus dimensiones). Limita las
       filas de la tabla destino que el merge compara a las cargadas en los últimos
-      `merge_ventana_dias` (3 por defecto). Sin él, cada lote tocaría casi todas las
-      particiones, porque el ID es un hash. Un duplicado que reaparezca pasada la
-      ventana quedaría como fila nueva: lo detectan los tests de unicidad.
+      `merge_ventana_dias` (36500 en dbt_project.yml: toda la tabla). Con una ventana
+      corta el merge se ahorra leer particiones (el ID es un hash y cada lote las
+      tocaría casi todas), pero solo es seguro si el último lote relleído tiene menos
+      días que la ventana: con una carga antigua y estática, un build repetido
+      duplicaría las filas. Con cargas nuevas y frecuentes se puede bajar a 3.
 #}
 {% macro filtro_incremental(columna='_loaded_at', marca=none) -%}
     {%- if is_incremental() -%}
