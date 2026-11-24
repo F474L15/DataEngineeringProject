@@ -461,12 +461,13 @@ unit_tests:
       Una noticia menciona un evento si contiene TODAS sus palabras clave o al
       menos UNA distintiva; si el evento tiene el token 4chan, la noticia debe
       contenerlo; y solo se comparan textos publicados entre 7 días antes y 90
-      después del evento. Un evento sin fecha se compara siempre.
+      después del evento. Un evento sin fecha válida no se compara con nada (Silver
+      lo elimina).
         ev1 'caso epstein' (+4chan): epstein es distintiva.
         ev2 'huelga general': general es distintiva; huelga la comparte con ev3.
         ev3 'huelga transporte': transporte es distintiva.
         ev4 'caso gil': ninguna distintiva, hacen falta las dos palabras.
-        ev5 'zzzzz' sin fecha: sin ventana.
+        ev5 'zzzzz' sin fecha: no se compara.
     model: slv_sql_server_dbo__menciona_evento_noticia
     overrides:
       macros:
@@ -497,7 +498,7 @@ unit_tests:
           # ventana: igual que la 10 pero 150 días después del evento, y 20 días antes -> no
           - {id_noticia: 16, titular: Epstein y 4chan,           subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-06-01 10:00:00', _loaded_at: '2026-06-01 10:00:00'}
           - {id_noticia: 17, titular: Epstein y 4chan,           subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2025-12-12 10:00:00', _loaded_at: '2025-12-12 10:00:00'}
-          # ev5 no tiene fecha: se compara aunque la noticia sea antigua
+          # ev5 no tiene fecha: no se compara, aunque la noticia contenga 'zzzzz'
           - {id_noticia: 18, titular: Zzzzz,                     subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2020-01-01 10:00:00', _loaded_at: '2020-01-01 10:00:00'}
     expect:
       rows:
@@ -505,7 +506,6 @@ unit_tests:
         - {id_evento: 3, id_noticia: 13, palabras_clave: 'huelga, transporte'}
         - {id_evento: 4, id_noticia: 14, palabras_clave: 'caso, gil'}
         - {id_evento: 2, id_noticia: 15, palabras_clave: general}
-        - {id_evento: 5, id_noticia: 18, palabras_clave: zzzzz}
 
   # --------------------------------------------------- MENCIONA EVENTO POST
   - name: test_slv_menciona_evento_post_regla

@@ -16,6 +16,8 @@
          'vegas', 'fappening'. Las palabras de eventos genéricos repetidos cada
          año ('huelga', 'gredos') no lo son.
 
+    Solo se devuelven eventos con fecha válida, los mismos que conserva slv_evento.
+
     Es el único sitio donde se decide el token: lo usan MEN y MEP, así que el
     token es siempre el mismo en ambos. Devuelve un SELECT con
     (id_evento, palabras_clave, es_distintiva, fecha_evento, _loaded_at). Uso:
@@ -39,7 +41,8 @@
             lateral flatten(
                 input => split(regexp_replace(e.evento_clave, '[^a-z0-9]+', ' '), ' ')
             ) t
-        where length(t.value::varchar) >= 3
+        where {{ fecha_es_valida('e.fecha_evento') }}
+          and length(t.value::varchar) >= 3
           and t.value::varchar <> '4chan'
           and t.value::varchar not in (
                 {%- for p in palabras_vacias -%}'{{ p }}'{{ ', ' if not loop.last }}{%- endfor -%}
@@ -67,7 +70,8 @@
             , '4chan'
             , _loaded_at
         from {{ ref('stg_sql_server_dbo__evento') }}
-        where contains(lower(coalesce(descripcion, '')), '4chan')
+        where {{ fecha_es_valida('fecha_evento') }}
+          and contains(lower(coalesce(descripcion, '')), '4chan')
 
     ) t
     left join (
@@ -90,12 +94,13 @@
     solo se compara con eventos si se publicó entre `ventana_dias_antes_evento`
     días antes de la fecha del evento (7 por defecto, para menciones previas) y
     `ventana_dias_despues_evento` días después (90 por defecto). Sin ventana, cada
-    lote se cruzaría con todos los eventos de la historia. Un evento sin fecha
-    válida (nula, anterior a 2009 o futura) se compara siempre.
+    lote se cruzaría con todos los eventos de la historia. Los eventos sin fecha
+    válida (nula, anterior a 2009 o futura) no llegan aquí: slv_evento los elimina
+    y eventos_palabras_clave() solo devuelve eventos con fecha válida, así que MEN y
+    MEP nunca apuntan a un evento que no exista en Silver.
     Uso: {{ ventana_evento('fecha_texto', 'fecha_evento') }}
 #}
 {% macro ventana_evento(fecha_texto, fecha_evento) -%}
-    (   not {{ fecha_es_valida(fecha_evento) }}
-     or {{ fecha_texto }} between dateadd(day, -{{ var('ventana_dias_antes_evento', 7) }}, {{ fecha_evento }})
-                              and dateadd(day,  {{ var('ventana_dias_despues_evento', 90) }}, {{ fecha_evento }}))
+    {{ fecha_texto }} between dateadd(day, -{{ var('ventana_dias_antes_evento', 7) }}, {{ fecha_evento }})
+                          and dateadd(day,  {{ var('ventana_dias_despues_evento', 90) }}, {{ fecha_evento }})
 {%- endmacro %}

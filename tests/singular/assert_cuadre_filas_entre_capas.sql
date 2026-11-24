@@ -17,13 +17,18 @@
 
 with bronze as (
 
+    -- Silver elimina los posts y eventos sin fecha válida: se cuentan solo los válidos.
     select 'post' as entidad, count(distinct id_post) as n
-    from {{ source('bronze', 'posts_4chan') }}
+    from (select id_post, {{ parse_fecha('fecha_post') }} as f from {{ source('bronze', 'posts_4chan') }})
+    where {{ fecha_es_valida('f') }}
 
     union all
 
-    select 'evento', count(distinct try_to_number(trim(id_evento)))
-    from {{ source('bronze', 'eventos') }}
+    -- Los casi duplicados (mismo título sin mayúsculas y misma fecha) cuentan como uno.
+    select 'evento', count(distinct coalesce(lower(t), ' ') || '|' || to_char(f))
+    from (select {{ limpiar_texto('evento') }} as t, {{ parse_fecha('fecha_evento') }} as f
+          from {{ source('bronze', 'eventos') }})
+    where {{ fecha_es_valida('f') }}
 
     union all
 
