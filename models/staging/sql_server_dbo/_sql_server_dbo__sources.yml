@@ -1,0 +1,75 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Datos crudos cargados desde CSV con COPY INTO (script 02). Todas las
+      columnas son varchar salvo id_post (number). La limpieza y el tipado se
+      hacen en staging.
+    # Variable de entorno de dbt Cloud: DEV_BRONZEPROJECT_DB, PRE_... o PRO_...
+    database: "{{ env_var('DBT_BRONZEPROJECT_DB') }}"
+    schema: sql_server_dbo
+
+    config:
+      loaded_at_field: _loaded_at
+      # Las cargas son manuales por lotes, así que los umbrales son holgados.
+      freshness:
+        warn_after: {count: 7, period: day}
+        error_after: {count: 30, period: day}
+
+    tables:
+      - name: noticias
+        description: >
+          Una fila por noticia y periodista (desnormalizado: periódico,
+          periodista y autor principal vienen en la misma fila).
+        columns:
+          - name: url
+            description: >
+              Clave natural de la noticia. Vacía en 25 filas; staging las
+              convierte en el texto 'NULL' y el control se hace en Silver.
+          - name: fecha_publicacion
+            description: Varchar con seis formatos mezclados.
+          - name: nombre_periodico
+            description: Con variantes de mayúsculas, espacios y sufijo S.L.
+          - name: autor_principal
+            description: Varchar con valores mezclados (TRUE, FALSE, S, 1, Sí...).
+          - name: _loaded_at
+            description: Momento de la carga; base del filtro incremental.
+
+      - name: posts_4chan
+        description: >
+          Una fila por post (desnormalizado: tablón y título del thread vienen
+          en cada post).
+        columns:
+          - name: id_post
+            description: >
+              Número. Hay 95 IDs repetidos en origen; slv_post los deduplica y
+              allí se comprueba que id_post es único.
+            tests:
+              - not_null
+          - name: id_usuario
+            description: Hash alfanumérico; vacío en algunos posts.
+          - name: name_tablon
+            description: Con erratas ('Intrnational').
+          - name: siglas
+            description: Con variantes de formato y, en unas 80 filas, de otro tablón.
+          - name: fecha_post
+            description: Varchar con formatos mezclados; incluye 'ayer' y '00/00/0000'.
+          - name: _loaded_at
+            description: Momento de la carga; base del filtro incremental.
+
+      - name: eventos
+        description: Catálogo de eventos. Hecho principal de Gold.
+        columns:
+          - name: id_evento
+            description: >
+              Hay 2 IDs repetidos (6 y 11) y eventos casi duplicados con IDs distintos.
+              Staging los deduplica y allí se comprueba que id_evento es único.
+            tests:
+              - not_null
+          - name: fecha_evento
+            description: Varchar con formatos mezclados y algunas fechas inválidas.
+          - name: categoria
+            description: Con variantes de mayúsculas, tildes y espacios.
+          - name: _loaded_at
+            description: Momento de la carga; base del filtro incremental.

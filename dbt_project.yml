@@ -1,8 +1,7 @@
-
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
-name: 'my_new_project'
+name: 'DataEngineeringProject'
 version: '1.0.0'
 config-version: 2
 
@@ -36,7 +35,54 @@ clean-targets:         # directories to be removed by `dbt clean`
 # using the `{{ config(...) }}` macro.
 
 models:
-  my_new_project:
-    # Applies to all files under models/example/
-    example:
+  DataEngineeringProject:
+    staging:
+      +database: "{{ env_var('DBT_SILVERPROJECT_DB') }}"
+      +schema: staging
+      +materialized: view
+
+    silver:
+      +database: "{{ env_var('DBT_SILVERPROJECT_DB') }}"
+      +schema: silver
       +materialized: table
+      +incremental_strategy: merge
+      +on_schema_change: append_new_columns
+      +tags: ['silver']
+
+    gold:
+      +database: "{{ env_var('DBT_GOLDPROJECT_DB') }}"
+      +schema: gold
+      +materialized: table
+      +incremental_strategy: merge
+      +on_schema_change: append_new_columns
+      +tags: ['gold']
+
+# Parámetros de la carga incremental (ver macros/incremental.sql y
+# macros/palabras_clave.sql). Se pueden cambiar por ejecución con --vars.
+vars:
+  incremental_margen_minutos: 30      # margen que se resta a la última marca de carga
+  merge_ventana_dias: 3               # días de la tabla destino que compara el merge
+  ventana_dias_antes_evento: 7        # un texto puede ser hasta 7 días anterior al evento
+  ventana_dias_despues_evento: 90     # y hasta 90 días posterior
+  buscar_eventos_nuevos: false        # true en el job diario: eventos nuevos contra el histórico
+  eventos_nuevos_horas: 26            # eventos cargados en las últimas horas, en ese job
+  historico_dias_eventos_nuevos: 365  # tope de histórico que lee ese job
+
+# Seeds: dimensiones pequeñas y estáticas (tablones y categorías). Van a su propio
+# schema, dentro de la database Silver. Tipos explícitos para que dbt no los
+# infiera del CSV.
+
+seeds:
+  DataEngineeringProject:
+    +database: "{{ env_var('DBT_SILVERPROJECT_DB') }}"
+    +schema: seeds
+    tablones:
+      +column_types:
+        id_tablon: number(38, 0)
+        name_tablon: varchar(100)
+        siglas: varchar(10)
+    categorias:
+      +column_types:
+        id_categoria: number(38, 0)
+        categoria: varchar(50)
+        categoria_clave: varchar(50)
