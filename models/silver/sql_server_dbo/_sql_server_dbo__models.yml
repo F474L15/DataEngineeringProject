@@ -1,0 +1,542 @@
+version: 2
+
+models:
+  - name: slv_sql_server_dbo__post
+    description: >
+      Post de 4chan. Incremental por id_post: deduplica el lote y hace merge con una ventana de 3 días. Sin ordenar (a este volumen el orden físico no se conserva).
+    columns:
+      - name: id_post
+        tests:
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
+          - not_null
+          - positive_values
+      - name: id_thread
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__thread')
+                field: id_thread
+      - name: id_usuario
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: name_usuario
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: comment
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: post_padre
+        description: >
+          Tal como llega, puede ser NULL o apuntar a un post que no existe (unos 40
+          en origen, más los padres eliminados por fecha inválida). dim_post
+          sustituye ambos casos por el post raíz del thread.
+      - name: fecha_post
+        description: timestamp_ntz sin zona horaria. Hay unas 26 fechas futuras y unas 33 nulas por formato irreconocible. Las fechas no se rellenan.
+
+  - name: slv_sql_server_dbo__thread
+    description: >
+      Thread de 4chan, uno por (tablón, título normalizado). Incremental por id_thread, con estado: cada lote se combina con la fila que ya existe. Guarda también su post raíz.
+    columns:
+      - name: id_thread
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: id_tablon
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('tablones')
+                field: id_tablon
+      - name: titulo
+        description: Grafía más frecuente del primer lote del thread; después no cambia.
+      - name: id_post_raiz
+        description: Post más antiguo del thread (con fecha; si ninguno la tiene, el de menor id_post). dim_post lo usa como post_padre de los posts sin padre.
+        tests:
+          - not_null
+      - name: fecha_primer_post
+        description: Fecha del post raíz. Nula si ningún post del thread tiene fecha.
+
+  - name: slv_sql_server_dbo__evento
+    description: >
+      Evento. Incremental por id_evento (pocas filas: el merge compara contra toda la tabla). Elimina los eventos sin fecha válida (ilegible, anterior a la fecha mínima o futura). Los eventos casi duplicados ya se fusionan en staging.
+    columns:
+      - name: id_evento
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: id_categoria
+        description: Sin categoría o no reconocida = id 16 (fila del seed categorias).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('categorias')
+                field: id_categoria
+      - name: descripcion
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: ubicacion
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: fecha_evento
+        description: timestamp_ntz sin zona horaria. Nula si el formato no se reconoce o la fecha no existe.
+
+  - name: slv_sql_server_dbo__noticia
+    description: >
+      Noticia, una por URL normalizada. Incremental por id_noticia: deduplica el lote (gana la carga más reciente y, a igualdad, la fila con titular) y hace merge con una ventana de 3 días.
+    columns:
+      - name: id_noticia
+        tests:
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
+          - not_null
+          - positive_values
+      - name: id_periodico
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__periodico')
+                field: id_periodico
+      - name: id_categoria
+        description: Sin categoría o no reconocida = id 16 (fila del seed categorias).
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('categorias')
+                field: id_categoria
+      - name: titular
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: subtitulo
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: cuerpo
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: imagen
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: url
+        description: >
+          URL normalizada. Las 25 noticias sin URL en origen llevan el texto 'NULL'
+          (id_noticia sale entonces de titular + periódico + fecha).
+        tests:
+          - not_null
+      - name: fecha_publicacion
+        description: timestamp_ntz sin zona horaria. Hay noticias de 1960 y unas 22 con fecha futura en origen. Las fechas no se rellenan.
+
+  - name: slv_sql_server_dbo__periodico
+    description: >
+      Periódico. Incremental por id_periodico, solo inserta: nombre y fecha de creación son los más frecuentes del primer lote en que aparece y no cambian después.
+    columns:
+      - name: id_periodico
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: nombre
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+
+  - name: slv_sql_server_dbo__periodista
+    description: >
+      Periodista. Incremental por id_periodista, solo inserta: cada campo es el valor más frecuente del primer lote en que aparece y no cambia después.
+    columns:
+      - name: id_periodista
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: nombre
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: apellidos
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+      - name: email
+        description: Nulo si falta o no es válido.
+      - name: biografia
+        description: Texto; los nulos se guardan como un espacio.
+        tests:
+          - not_null
+
+  - name: slv_sql_server_dbo__escribe
+    description: >
+      Relación noticia-periodista. Incremental por id_escribe: deduplica el lote y hace merge con una ventana de 3 días.
+    columns:
+      - name: id_escribe
+        tests:
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
+          - not_null
+          - positive_values
+      - name: id_noticia
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__noticia')
+                field: id_noticia
+      - name: id_periodista
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__periodista')
+                field: id_periodista
+
+  - name: slv_sql_server_dbo__menciona_evento_noticia
+    description: >
+      MEN (Menciona_Evento_Noticia). Una fila por (evento, noticia); id_men = abs(hash(id_evento, id_noticia)). palabras_clave lista las que aparecen. Incremental por id_men: cruza las noticias nuevas con los eventos (cada 10 minutos) y, con buscar_eventos_nuevos=true, los eventos nuevos con las noticias ya guardadas (job diario). Solo se comparan textos y eventos dentro de una ventana de fechas.
+    columns:
+      - name: id_men
+        tests:
+          - unique
+          - not_null
+          - positive_values
+      - name: id_evento
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__evento')
+                field: id_evento
+      - name: id_noticia
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__noticia')
+                field: id_noticia
+      - name: palabras_clave
+        tests:
+          - not_null
+      - name: _loaded_at_texto
+        description: Carga de la noticia. De aquí sale la marca del lote incremental.
+      - name: _loaded_at
+        description: Momento en que se calculó la pareja (no el de la noticia). Gold lo usa para recoger lo nuevo.
+
+  - name: slv_sql_server_dbo__menciona_evento_post
+    description: >
+      MEP (Menciona_Evento_Post). Una fila por (evento, post); id_mep = abs(hash(id_evento, id_post)). palabras_clave lista las que aparecen. La unidad evaluada es el post; el thread se obtiene desde slv_post. Incremental por id_mep: cruza los posts nuevos con los eventos (cada 10 minutos) y, con buscar_eventos_nuevos=true, los eventos nuevos con los posts ya guardados (job diario). Mismas reglas que MEN, pero 4chan no es obligatorio ni cuenta como palabra clave. Solo se comparan textos y eventos dentro de una ventana de fechas.
+    columns:
+      - name: id_mep
+        tests:
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
+          - not_null
+          - positive_values
+      - name: id_evento
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__evento')
+                field: id_evento
+      - name: id_post
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('slv_sql_server_dbo__post')
+                field: id_post
+      - name: palabras_clave
+        tests:
+          - not_null
+      - name: fecha_post
+        description: Fecha del post (timestamp_ntz; puede ser nula).
+      - name: _loaded_at_texto
+        description: Carga del post. De aquí sale la marca del lote incremental.
+      - name: _loaded_at
+        description: Momento en que se calculó la pareja (no el del post). Gold lo usa para recoger lo nuevo.
+
+# =============================================================================
+# Tests unitarios de Silver (dbt >= 1.8). La carga incremental no se simula en
+# casi ninguno (is_incremental = false: sin filtro de lote); se prueba lo que
+# hace cada modelo con las filas del lote. test_slv_thread_estado_previo sí
+# activa el modo incremental y da la tabla actual como entrada `this`.
+# En `expect`, todas las filas deben llevar las mismas columnas. Los ID basados
+# en HASH y _loaded_at (current_timestamp) no se comprueban.
+#   dbt test --select "test_type:unit,tag:silver"
+# =============================================================================
+unit_tests:
+
+  # ------------------------------------------------------------------ POST
+  - name: test_slv_post_deduplica
+    description: >
+      Un id_post repetido deja una sola fila: la de _loaded_at más reciente y, a
+      igualdad de carga, la de fecha más reciente.
+    model: slv_sql_server_dbo__post
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__post')
+        rows:
+          - {id_post: 103, comment: viejo,           fecha_post: '2026-01-01 12:30:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 103, comment: nuevo,           fecha_post: '2026-01-01 12:30:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_post: 104, comment: fecha antigua,   fecha_post: '2026-01-01 12:40:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 104, comment: fecha reciente,  fecha_post: '2026-01-01 13:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 105, comment: unico,           fecha_post: '2026-01-01 14:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 103, comment: nuevo}
+        - {id_post: 104, comment: fecha reciente}
+        - {id_post: 105, comment: unico}
+
+  - name: test_slv_post_descarta_fecha_invalida
+    description: >
+      Un post sin fecha, con fecha futura o anterior a la fecha mínima se elimina:
+      no se puede saber cuándo se escribió ni sanearlo.
+    model: slv_sql_server_dbo__post
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__post')
+        rows:
+          - {id_post: 201, fecha_post: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 202, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 203, fecha_post: '2099-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 204, fecha_post: '2000-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 201}
+
+  # ---------------------------------------------------------------- EVENTO
+  - name: test_slv_evento_descarta_fecha_invalida
+    description: >
+      Un evento sin fecha, con fecha futura o anterior a la fecha mínima se elimina.
+    model: slv_sql_server_dbo__evento
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__evento')
+        rows:
+          - {id_evento: 1, fecha_evento: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 2, fecha_evento: '2099-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 3, fecha_evento: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 4, fecha_evento: '2000-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1}
+
+  # ---------------------------------------------------------------- THREAD
+  - name: test_slv_thread_raiz_y_titulo
+    description: >
+      Primer lote de un thread: el título es la grafía más frecuente y la raíz es
+      el post con la fecha más antigua (un post sin fecha no cuenta). Si ningún
+      post tiene fecha, la raíz es el de menor id_post.
+    model: slv_sql_server_dbo__thread
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__thread')
+        rows:
+          - {id_thread: 500, id_tablon: 1, titulo_thread: Hilo, id_post: 2, fecha_post: '2026-01-01 11:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_thread: 500, id_tablon: 1, titulo_thread: Hilo, id_post: 1, fecha_post: '2026-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_thread: 500, id_tablon: 1, titulo_thread: HILO, id_post: 3, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_thread: 501, id_tablon: 1, titulo_thread: Otro, id_post: 9, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_thread: 501, id_tablon: 1, titulo_thread: Otro, id_post: 7, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_thread: 500, titulo: Hilo, id_post_raiz: 1, fecha_primer_post: '2026-01-01 10:00:00'}
+        - {id_thread: 501, titulo: Otro, id_post_raiz: 7, fecha_primer_post: null}
+
+  - name: test_slv_thread_estado_previo
+    description: >
+      Carga incremental: el lote se combina con el estado que el thread ya tiene.
+      El título guardado no cambia aunque el lote traiga otro más frecuente. Un post
+      posterior no cambia la raíz; uno anterior la sustituye.
+    model: slv_sql_server_dbo__thread
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: ref('stg_sql_server_dbo__thread')
+        rows:
+          - {id_thread: 600, id_tablon: 1, titulo_thread: Otro,   id_post: 60, fecha_post: '2026-01-02 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_thread: 600, id_tablon: 1, titulo_thread: Otro,   id_post: 61, fecha_post: '2026-01-03 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_thread: 600, id_tablon: 1, titulo_thread: Otro,   id_post: 62, fecha_post: '2026-01-04 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_thread: 601, id_tablon: 1, titulo_thread: Hilo C, id_post: 71, fecha_post: '2026-01-01 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+      - input: this
+        rows:
+          - {id_thread: 600, id_tablon: 1, titulo: Titulo viejo, id_post_raiz: 50, fecha_primer_post: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_thread: 601, id_tablon: 1, titulo: Hilo C,       id_post_raiz: 70, fecha_primer_post: '2026-01-05 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_thread: 600, titulo: Titulo viejo, id_post_raiz: 50, fecha_primer_post: '2026-01-01 00:00:00'}
+        - {id_thread: 601, titulo: Hilo C,       id_post_raiz: 71, fecha_primer_post: '2026-01-01 00:00:00'}
+
+  # --------------------------------------------------------------- NOTICIA
+  - name: test_slv_noticia_deduplica
+    description: >
+      Una noticia repetida deja una sola fila: la de carga más reciente y, a igualdad,
+      la de fecha más reciente y, a igualdad, la que tiene titular (no ' ').
+    model: slv_sql_server_dbo__noticia
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__noticia')
+        rows:
+          - {id_noticia: 1, titular: Version vieja, fecha_publicacion: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_noticia: 1, titular: Version nueva, fecha_publicacion: '2026-01-01 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_noticia: 2, titular: ' ',           fecha_publicacion: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_noticia: 2, titular: Con titular,   fecha_publicacion: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_noticia: 1, titular: Version nueva}
+        - {id_noticia: 2, titular: Con titular}
+
+  # ------------------------------------------------------------- PERIODICO
+  - name: test_slv_periodico_valor_mas_frecuente
+    description: Nombre y fecha de creación son los más frecuentes del lote; sin nombre en ninguna fila, ' '.
+    model: slv_sql_server_dbo__periodico
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__periodico')
+        rows:
+          - {id_periodico: 1, nombre: El País, fecha_creacion: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_periodico: 1, nombre: El País, fecha_creacion: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_periodico: 1, nombre: EL PAÍS, fecha_creacion: '1976-05-04 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_periodico: 2, nombre: null,    fecha_creacion: null,                  _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_periodico: 1, nombre: El País, fecha_creacion: '1976-05-04 00:00:00'}
+        - {id_periodico: 2, nombre: ' ',     fecha_creacion: null}
+
+  # ------------------------------------------------------------ PERIODISTA
+  - name: test_slv_periodista_valor_mas_frecuente
+    description: >
+      Cada campo toma su valor más frecuente del lote, ignorando los nulos. El email
+      sigue siendo NULL si ninguna fila lo tiene válido; el resto de textos sin dato
+      valen ' '.
+    model: slv_sql_server_dbo__periodista
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__periodista')
+        rows:
+          - {id_periodista: 1, nombre: Alba,   apellidos: Montoro Pla, email: alba@x.es, biografia: null, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_periodista: 1, nombre: Alba,   apellidos: Montoro Pla, email: null,      biografia: null, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_periodista: 1, nombre: Albita, apellidos: Montoro Pla, email: null,      biografia: null, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_periodista: 2, nombre: null,   apellidos: null,        email: null,      biografia: null, _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_periodista: 1, nombre: Alba, apellidos: Montoro Pla, email: alba@x.es, biografia: ' '}
+        - {id_periodista: 2, nombre: ' ',  apellidos: ' ',         email: null,      biografia: ' '}
+
+  # ------------------------------------------------- MENCIONA EVENTO NOTICIA
+  - name: test_slv_menciona_evento_noticia_regla
+    description: >
+      Una noticia menciona un evento si contiene TODAS sus palabras clave o al
+      menos UNA distintiva; si el evento tiene el token 4chan, la noticia debe
+      contenerlo; y solo se comparan textos publicados entre 7 días antes y 90
+      después del evento. Un evento sin fecha válida no se compara con nada (Silver
+      lo elimina).
+        ev1 'caso epstein' (+4chan): epstein es distintiva.
+        ev2 'huelga general': general es distintiva; huelga la comparte con ev3.
+        ev3 'huelga transporte': transporte es distintiva.
+        ev4 'caso gil': ninguna distintiva, hacen falta las dos palabras.
+        ev5 'zzzzz' sin fecha: no se compara.
+    model: slv_sql_server_dbo__menciona_evento_noticia
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__evento')
+        rows:
+          - {id_evento: 1, evento_clave: caso epstein,      descripcion: filtrado en 4chan, fecha_evento: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 2, evento_clave: huelga general,    descripcion: ' ',               fecha_evento: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 3, evento_clave: huelga transporte, descripcion: ' ',               fecha_evento: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 4, evento_clave: caso gil,          descripcion: ' ',               fecha_evento: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 5, evento_clave: zzzzz,             descripcion: ' ',               fecha_evento: null,                  _loaded_at: '2026-01-01 00:00:00'}
+      - input: ref('slv_sql_server_dbo__noticia')
+        rows:
+          # ev1: epstein (distintiva) + 4chan -> sí, aunque falte 'caso'
+          - {id_noticia: 10, titular: Epstein y 4chan,           subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          # ev1 exige 4chan: sin 4chan no hay mención. ev4: solo 'caso' -> no
+          - {id_noticia: 11, titular: Caso Epstein,              subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          # 'huelga' sola no basta (no es distintiva ni son todas)
+          - {id_noticia: 12, titular: Nueva huelga,              subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          # ev3: huelga + transporte (también distintiva)
+          - {id_noticia: 13, titular: Gran huelga de transporte, subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          # ev4: todas las palabras; 4chan no es obligatorio si el evento no lo tiene.
+          # ev1: caso + 4chan pero sin epstein -> no
+          - {id_noticia: 14, titular: Caso Gil en 4chan,         subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          # ev2: general es distintiva (la palabra va entera, en el cuerpo)
+          - {id_noticia: 15, titular: ' ',                       subtitulo: ' ', cuerpo: El general dijo, fecha_publicacion: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          # ventana: igual que la 10 pero 150 días después del evento, y 20 días antes -> no
+          - {id_noticia: 16, titular: Epstein y 4chan,           subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2026-06-01 10:00:00', _loaded_at: '2026-06-01 10:00:00'}
+          - {id_noticia: 17, titular: Epstein y 4chan,           subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2025-12-12 10:00:00', _loaded_at: '2025-12-12 10:00:00'}
+          # ev5 no tiene fecha: no se compara, aunque la noticia contenga 'zzzzz'
+          - {id_noticia: 18, titular: Zzzzz,                     subtitulo: ' ', cuerpo: ' ',            fecha_publicacion: '2020-01-01 10:00:00', _loaded_at: '2020-01-01 10:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, id_noticia: 10, palabras_clave: '4chan, epstein'}
+        - {id_evento: 3, id_noticia: 13, palabras_clave: 'huelga, transporte'}
+        - {id_evento: 4, id_noticia: 14, palabras_clave: 'caso, gil'}
+        - {id_evento: 2, id_noticia: 15, palabras_clave: general}
+
+  # --------------------------------------------------- MENCIONA EVENTO POST
+  - name: test_slv_menciona_evento_post_regla
+    description: >
+      Mismas reglas de palabras que MEN, pero 4chan NO es obligatorio ni cuenta como
+      palabra. El texto del post es el título de su thread más su comentario. Una
+      fila por pareja (evento, post); el thread no aparece en la tabla.
+    model: slv_sql_server_dbo__menciona_evento_post
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_sql_server_dbo__evento')
+        rows:
+          - {id_evento: 1, evento_clave: caso epstein, descripcion: filtrado en 4chan, fecha_evento: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: 4, evento_clave: caso gil,     descripcion: ' ',               fecha_evento: '2026-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+      - input: ref('slv_sql_server_dbo__thread')
+        rows:
+          - {id_thread: 500, titulo: Hilo}
+          - {id_thread: 501, titulo: Otro}
+          - {id_thread: 502, titulo: Nada}
+      - input: ref('slv_sql_server_dbo__post')
+        rows:
+          - {id_post: 1, id_thread: 500, comment: epstein files,   fecha_post: '2026-01-05 10:00:00', _loaded_at: '2026-01-05 10:00:00'}
+          - {id_post: 2, id_thread: 500, comment: el caso epstein, fecha_post: '2026-01-05 11:00:00', _loaded_at: '2026-01-05 11:00:00'}
+          - {id_post: 3, id_thread: 501, comment: caso gil,        fecha_post: '2026-01-05 09:00:00', _loaded_at: '2026-01-05 09:00:00'}
+          - {id_post: 4, id_thread: 501, comment: epstein,         fecha_post: '2026-01-05 12:00:00', _loaded_at: '2026-01-05 12:00:00'}
+          - {id_post: 5, id_thread: 502, comment: caso cerrado,    fecha_post: '2026-01-05 08:00:00', _loaded_at: '2026-01-05 08:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, id_post: 1, palabras_clave: epstein}
+        - {id_evento: 1, id_post: 2, palabras_clave: 'caso, epstein'}
+        - {id_evento: 4, id_post: 3, palabras_clave: 'caso, gil'}
+        - {id_evento: 1, id_post: 4, palabras_clave: epstein}

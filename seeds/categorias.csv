@@ -1,0 +1,17 @@
+id_categoria,categoria,categoria_clave
+1,Actualidad,actualidad
+2,Ciencia,ciencia
+3,Cultura,cultura
+4,Deportes,deportes
+5,Economía,economia
+6,Infraestructuras,infraestructuras
+7,Internacional,internacional
+8,Justicia,justicia
+9,Laboral,laboral
+10,Medio ambiente,medio ambiente
+11,Política,politica
+12,Sociedad,sociedad
+13,Sucesos,sucesos
+14,Tecnología,tecnologia
+15,Varios,varios
+16,Sin categoría,sin categoria

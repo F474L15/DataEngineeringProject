@@ -1,0 +1,169 @@
+version: 2
+
+models:
+  - name: dim_fecha
+    description: >
+      Una fila por día de 2000 a 2030, más la fila 0 (sin fecha). Ordenada por id_fecha.
+    columns:
+      - name: id_fecha
+        tests:
+          - unique
+          - not_null
+          - non_negative_values
+  - name: dim_categoria
+    description: >
+      Categorías del seed, incluida 'Sin categoría' (id 16). Ordenada por id_categoria.
+    columns:
+      - name: id_categoria
+        tests:
+          - unique
+          - not_null
+          - positive_values
+  - name: dim_evento
+    description: >
+      Ordenada por id_evento.
+    columns:
+      - name: id_evento
+        tests:
+          - unique
+          - not_null
+      - name: id_categoria
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_categoria')
+                field: id_categoria
+  - name: dim_noticia
+    description: >
+      Incremental por id_noticia (ventana de merge de 3 días). Sin ordenar.
+    columns:
+      - name: id_noticia
+        tests:
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
+          - not_null
+      - name: id_categoria
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_categoria')
+                field: id_categoria
+  - name: dim_thread
+    description: >
+      Incremental por id_thread. Incluye el post raíz del thread y su fecha. Sin ordenar.
+    columns:
+      - name: id_thread
+        tests:
+          - unique
+          - not_null
+  - name: dim_post
+    description: >
+      Incremental por id_post (ventana de merge de 3 días). Sin ordenar. post_padre vacío en Silver se rellena aquí con el post raíz del thread; el propio raíz se apunta a sí mismo.
+    columns:
+      - name: id_post
+        tests:
+          - unique:
+              config:
+                where: "_loaded_at > dateadd(day, -3, current_timestamp())"
+          - not_null
+      - name: id_thread
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_thread')
+                field: id_thread
+      - name: post_padre
+        description: Nunca nulo y siempre existe en dim_post. Un post sin padre, o con un padre inexistente, apunta al raíz de su thread.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_post')
+                field: id_post
+  - name: fct_menciona_evento_noticia
+    description: >
+      Una fila por (evento, noticia). palabras_clave lista las que aparecen. Incremental por id_men: recoge las parejas que Silver calcula desde la última ejecución. Sin ordenar.
+    columns:
+      - name: id_men
+        tests:
+          - unique
+          - not_null
+      - name: id_evento
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_evento')
+                field: id_evento
+      - name: id_noticia
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_noticia')
+                field: id_noticia
+      - name: id_fecha
+        tests:
+          - non_negative_values
+          - relationships:
+              arguments:
+                to: ref('dim_fecha')
+                field: id_fecha
+              config:
+                severity: warn
+  - name: fct_menciona_evento_4chan
+    description: >
+      Una fila por (evento, post): el post es la unidad evaluada y el thread se obtiene desde dim_post. fecha_mencion = fecha del post. Incremental por id_mep: recoge las parejas que Silver calcula desde la última ejecución. Sin ordenar.
+    columns:
+      - name: id_mep
+        tests:
+          - unique
+          - not_null
+      - name: id_evento
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_evento')
+                field: id_evento
+      - name: id_post
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_post')
+                field: id_post
+      - name: id_fecha
+        tests:
+          - non_negative_values
+          - relationships:
+              arguments:
+                to: ref('dim_fecha')
+                field: id_fecha
+              config:
+                severity: warn
+
+unit_tests:
+  - name: test_dim_post_padre_inexistente
+    description: >
+      post_padre vacío o que apunta a un post inexistente se sustituye por el post
+      raíz del thread; un padre existente se conserva.
+    model: dim_post
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('slv_sql_server_dbo__post')
+        rows:
+          - {id_post: 1, id_thread: 7, post_padre: null, fecha_post: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 2, id_thread: 7, post_padre: 1,    fecha_post: '2020-01-01 11:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 3, id_thread: 7, post_padre: 999,  fecha_post: '2020-01-01 12:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 4, id_thread: 7, post_padre: null, fecha_post: '2020-01-01 13:00:00', _loaded_at: '2026-01-01 00:00:00'}
+      - input: ref('slv_sql_server_dbo__thread')
+        rows:
+          - {id_thread: 7, id_post_raiz: 1}
+    expect:
+      rows:
+        - {id_post: 1, post_padre: 1}
+        - {id_post: 2, post_padre: 1}
+        - {id_post: 3, post_padre: 1}
+        - {id_post: 4, post_padre: 1}

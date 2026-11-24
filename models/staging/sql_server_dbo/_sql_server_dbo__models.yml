@@ -1,0 +1,239 @@
+version: 2
+
+# Los modelos de staging son vistas fila a fila: no deduplican ni agrupan, para que
+# el filtro incremental de Silver llegue hasta Bronze. Por eso solo evento (poco
+# volumen) comprueba unicidad; en el resto, la unicidad se comprueba en Silver.
+models:
+  - name: stg_sql_server_dbo__post
+    description: Post de 4chan limpio, una fila por fila de Bronze (puede haber varias por id_post; slv_post deduplica).
+    columns:
+      - name: id_post
+        tests: [not_null]
+      - name: post_padre
+        description: Tal como llega (puede ser NULL). Hay unos 40 posts cuyo padre no existe en la tabla.
+
+  - name: stg_sql_server_dbo__thread
+    description: Datos del thread de cada fila de Bronze (una fila por post, sin agrupar). slv_thread agrupa el lote.
+    columns:
+      - name: id_thread
+        tests: [not_null]
+
+  - name: stg_sql_server_dbo__evento
+    description: Evento limpio, uno por id_evento y sin casi duplicados (mismo título sin distinguir mayúsculas y misma fecha). Tabla pequeña, se deduplica aquí.
+    columns:
+      - name: id_evento
+        tests: [unique, not_null]
+
+  - name: stg_sql_server_dbo__noticia
+    description: Noticia limpia, una fila por fila de Bronze (slv_noticia deduplica por URL normalizada).
+    columns:
+      - name: id_noticia
+        tests: [not_null]
+
+  - name: stg_sql_server_dbo__periodico
+    description: Periódico, una fila por fila de noticias. slv_periodico elige el nombre más frecuente.
+    columns:
+      - name: id_periodico
+        tests: [not_null]
+
+  - name: stg_sql_server_dbo__periodista
+    description: Periodista, una fila por fila de noticias. slv_periodista elige el valor más frecuente de cada campo.
+    columns:
+      - name: id_periodista
+        tests: [not_null]
+
+  - name: stg_sql_server_dbo__escribe
+    description: Relación noticia-periodista, una fila por fila de noticias (slv_escribe deduplica).
+    columns:
+      - name: id_escribe
+        tests: [not_null]
+
+# =============================================================================
+# Tests unitarios de staging (dbt >= 1.8): filas dadas -> filas esperadas, sin
+# tocar los datos reales. Las relaciones de entrada (source, seed, ref) tienen
+# que existir en Snowflake para que dbt conozca los tipos de las columnas; las
+# columnas no indicadas valen NULL. En `expect`, todas las filas deben llevar las
+# mismas columnas (si no, Snowflake falla al unir real y esperado). Los ID basados en HASH no se comprueban (no
+# se pueden calcular a mano): cada fila se identifica por sus columnas de negocio.
+#   dbt test --select test_type:unit
+#   dbt test --select "stg_sql_server_dbo__evento,test_type:unit"
+# =============================================================================
+unit_tests:
+
+  # ---------------------------------------------------------------- EVENTO
+  # Fixtures CSV (tests/fixtures/stg_evento__fechas_*.csv) para probar muchos
+  # formatos de fecha de una vez; el resto de tests llevan las filas inline.
+  - name: test_stg_evento_parse_fecha
+    description: >
+      parse_fecha reconoce cada formato de origen (ISO, ISO con T/Z, YYYYMMDD,
+      época Unix, dd/mm/yyyy con y sin hora, dd-mm-yyyy, dd-mm-yy, "dd Mon yyyy",
+      "Mon dd, yyyy" con y sin hora AM/PM, "Month dd, yyyy" y solo el año) y
+      devuelve NULL con una fecha imposible (31/02, mes 14) o sin formato.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        format: csv
+        fixture: stg_evento__fechas_cases
+    expect:
+      format: csv
+      fixture: stg_evento__fechas_expected
+
+  - name: test_stg_evento_categoria_y_nulos
+    description: >
+      La categoría se reconduce al seed (Política Nacional -> política) y, si falta
+      o no se reconoce, cae en 'sin categoria' (id 16). Los textos sin dato valen ' '
+      (gobernanza). La ubicación N/A queda en blanco y la ubicación en mayúsculas
+      pasa a Initcap.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 2,  categoria_clave: politica}
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        rows:
+          - {id_evento: '1', evento: '  Caso   Epstein  ', categoria: Política Nacional, ubicacion: N/A,             descripcion: null, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '2', evento: Evento B,             categoria: Algo raro,          ubicacion: MADRID - ESPAÑA, descripcion: Texto, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '3', evento: Evento C,             categoria: null,               ubicacion: Sevilla,        descripcion: Texto, _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, evento: Caso Epstein, evento_clave: caso epstein, id_categoria: 2,  ubicacion: ' ',              descripcion: ' '}
+        - {id_evento: 2, evento: Evento B,     evento_clave: evento b,     id_categoria: 16, ubicacion: 'Madrid, España', descripcion: Texto}
+        - {id_evento: 3, evento: Evento C,     evento_clave: evento c,     id_categoria: 16, ubicacion: Sevilla,          descripcion: Texto}
+
+  - name: test_stg_evento_deduplica
+    description: >
+      Un id_evento repetido deja una sola fila: la de _loaded_at más reciente y,
+      a igualdad de carga, la de fecha_evento más reciente.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        rows:
+          - {id_evento: '1', evento: Version vieja, fecha_evento: '2020-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '1', evento: Version nueva, fecha_evento: '2020-01-01 00:00:00', _loaded_at: '2026-02-01 00:00:00'}
+          - {id_evento: '2', evento: Fecha antigua, fecha_evento: '2020-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '2', evento: Fecha reciente, fecha_evento: '2021-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 1, evento: Version nueva}
+        - {id_evento: 2, evento: Fecha reciente}
+
+  - name: test_stg_evento_fusiona_mayusculas
+    description: >
+      Dos eventos con el mismo título (sin distinguir mayúsculas) y la misma fecha
+      dejan uno: el de descripción más larga y, a igualdad, el de menor id. Otra
+      fecha, o un título que difiere en algo más que las mayúsculas (una tilde),
+      no se fusiona.
+    model: stg_sql_server_dbo__evento
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'eventos')
+        rows:
+          - {id_evento: '1', evento: Cumbre del clima, fecha_evento: '2020-01-01 10:00:00', descripcion: corta,                 _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '2', evento: CUMBRE DEL CLIMA, fecha_evento: '2020-01-01 10:00:00', descripcion: descripcion mas larga, _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '3', evento: Otro,             fecha_evento: '2020-01-01 10:00:00', descripcion: igual,                 _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '4', evento: otro,             fecha_evento: '2020-01-01 10:00:00', descripcion: igual,                 _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '5', evento: Cumbre del clima, fecha_evento: '2021-01-01 10:00:00', descripcion: otra fecha,            _loaded_at: '2026-01-01 00:00:00'}
+          - {id_evento: '6', evento: Cumbre del clíma, fecha_evento: '2020-01-01 10:00:00', descripcion: con tilde,             _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_evento: 2, evento: CUMBRE DEL CLIMA}
+        - {id_evento: 3, evento: Otro}
+        - {id_evento: 5, evento: Cumbre del clima}
+        - {id_evento: 6, evento: Cumbre del clíma}
+
+  # ------------------------------------------------------------- PERIODICO
+
+  # ------------------------------------------------------------------ POST
+  - name: test_stg_post_tablon_y_texto
+    description: >
+      El tablón con errata ("Intrnational") se resuelve por el nombre aunque las
+      siglas sean de otro tablón. id_usuario sin dato vale ' ' y post_padre vacío
+      sigue siendo NULL (se rellena en dim_post). No deduplica: dos filas con el
+      mismo id_post salen las dos.
+    model: stg_sql_server_dbo__post
+    given:
+      - input: ref('tablones')
+        rows:
+          - {id_tablon: 1, name_tablon: Politically Incorrect, siglas: /pol/}
+          - {id_tablon: 2, name_tablon: International,         siglas: /int/}
+      - input: source('bronze', 'posts_4chan')
+        rows:
+          - {id_post: 100, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: raiz,   id_usuario: null, post_padre: null,  fecha_post: '2026-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 100, name_tablon: Politically Incorrect, siglas: /pol/, titulo_thread: Hilo A, comment: repetido, id_usuario: u1,  post_padre: null,  fecha_post: '2026-01-01 10:00:00', _loaded_at: '2026-01-02 00:00:00'}
+          - {id_post: 200, name_tablon: Intrnational,          siglas: /pol/, titulo_thread: Hilo B, comment: errata, id_usuario: u5, post_padre: '100', fecha_post: '2026-01-02 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 100, id_tablon: 1, id_usuario: ' ', post_padre: null}
+        - {id_post: 100, id_tablon: 1, id_usuario: u1,  post_padre: null}
+        - {id_post: 200, id_tablon: 2, id_usuario: u5,  post_padre: 100}
+
+  # --------------------------------------------------------------- NOTICIA
+  - name: test_stg_noticia_url_normalizada
+    description: >
+      La url queda en minúsculas, con https://www. (con o sin www, con 'http:/' o
+      en mayúsculas) y sin parámetros de seguimiento utm: dos variantes de la misma
+      noticia dan la misma url corta. Otros parámetros se conservan y una url vacía
+      sale como el texto 'NULL'.
+    model: stg_sql_server_dbo__noticia
+    given:
+      - input: ref('categorias')
+        rows:
+          - {id_categoria: 16, categoria_clave: sin categoria}
+      - input: source('bronze', 'noticias')
+        rows:
+          - {titular: t1, url: 'HTTP:/WWW.DIARIO.EXAMPLE/A-1',                                                _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t2, url: 'diario.example/b-2',                                                          _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t3, url: 'https://www.diario.example/c-3?utm_source=twitter&utm_medium=social',         _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t4, url: 'https://www.diario.example/c-3?utm_source=twitter&utm_medium=social-copia',   _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t5, url: 'https://www.diario.example/d-4?id=7',                                         _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: t6, url: null,                                                                          _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {titular: t1, url: 'https://www.diario.example/a-1'}
+        - {titular: t2, url: 'https://www.diario.example/b-2'}
+        - {titular: t3, url: 'https://www.diario.example/c-3'}
+        - {titular: t4, url: 'https://www.diario.example/c-3'}
+        - {titular: t5, url: 'https://www.diario.example/d-4?id=7'}
+        - {titular: t6, url: 'NULL'}
+
+  # ---------------------------------------------------------------- THREAD
+  - name: test_stg_thread_solo_fechas_validas
+    description: >
+      Solo pasan los posts con fecha válida (existe, no es anterior a la fecha
+      mínima ni futura), los mismos que conserva slv_post.
+    model: stg_sql_server_dbo__thread
+    given:
+      - input: ref('stg_sql_server_dbo__post')
+        rows:
+          - {id_post: 1, id_thread: 7, fecha_post: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 2, id_thread: 7, fecha_post: null,                  _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 3, id_thread: 7, fecha_post: '2099-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 4, id_thread: 7, fecha_post: '2000-01-01 00:00:00', _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {id_post: 1}
+
+  # ------------------------------------------------------------ PERIODISTA
+  - name: test_stg_periodista_email_valido
+    description: Un email sin formato válido (sin @, con '#', sin dominio) sale NULL; uno válido sale en minúsculas.
+    model: stg_sql_server_dbo__periodista
+    given:
+      - input: source('bronze', 'noticias')
+        rows:
+          - {titular: a, nombre_periodista: Alba,    email_periodista: ALBA@x.es,   _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: b, nombre_periodista: Beatriz, email_periodista: beatriz#x.es, _loaded_at: '2026-01-01 00:00:00'}
+          - {titular: c, nombre_periodista: Carlos,  email_periodista: carlos@x,     _loaded_at: '2026-01-01 00:00:00'}
+    expect:
+      rows:
+        - {nombre: Alba,    email: alba@x.es}
+        - {nombre: Beatriz, email: null}
+        - {nombre: Carlos,  email: null}
