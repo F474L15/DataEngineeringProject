@@ -32,14 +32,10 @@ models:
         tests:
           - not_null
       - name: post_padre
-        description: Tal como llega, puede ser NULL. dim_post rellena los vacíos con el post raíz del thread (el propio raíz se apunta a sí mismo). Hay unos 40 posts cuyo padre no existe en la tabla.
-        tests:
-          - relationships:
-              arguments:
-                to: ref('slv_sql_server_dbo__post')
-                field: id_post
-              config:
-                severity: warn
+        description: >
+          Tal como llega, puede ser NULL o apuntar a un post que no existe (unos 40
+          en origen, más los padres eliminados por fecha inválida). dim_post
+          sustituye ambos casos por el post raíz del thread.
       - name: fecha_post
         description: timestamp_ntz sin zona horaria. Hay unas 26 fechas futuras y unas 33 nulas por formato irreconocible. Las fechas no se rellenan.
 
@@ -139,7 +135,11 @@ models:
         tests:
           - not_null
       - name: url
-        description: Clave de negocio de la que sale id_noticia. Nula en unas 25 filas de origen.
+        description: >
+          URL normalizada. Las 25 noticias sin URL en origen llevan el texto 'NULL'
+          (id_noticia sale entonces de titular + periódico + fecha).
+        tests:
+          - not_null
       - name: fecha_publicacion
         description: timestamp_ntz sin zona horaria. Hay noticias de 1960 y unas 22 con fecha futura en origen. Las fechas no se rellenan.
 

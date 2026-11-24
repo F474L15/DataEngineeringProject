@@ -109,6 +109,8 @@
     select final, DESPUÉS de calcular claves e ids, porque las claves necesitan el
     null para distinguir "sin dato". No se usa con ids, fechas ni booleanos: un ' '
     no cabe en una columna numérica o de fecha. url y email se quedan en NULL.
+    Excepción: cuando falta la url, staging de noticia guarda el texto 'NULL' (señala
+    el problema sin dejar un nulo en la tabla).
 #}
 {% macro texto_o_blanco(columna) -%}
     coalesce({{ columna }}, ' ')

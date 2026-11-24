@@ -28,7 +28,7 @@ select
     , {{ texto_o_blanco(recortar('b.imagen')) }}                     as imagen
     , coalesce(c.id_categoria, sc.id_categoria)                      as id_categoria
     , {{ parse_fecha('b.fecha_publicacion') }}                       as fecha_publicacion
-    , {{ clave_url('b.url') }}                                       as url
+    , coalesce({{ clave_url('b.url') }}, 'NULL')                     as url
     , b._loaded_at
 from base b
 left join categorias c

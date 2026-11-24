@@ -182,7 +182,7 @@ unit_tests:
       La url queda en minúsculas, con https://www. (con o sin www, con 'http:/' o
       en mayúsculas) y sin parámetros de seguimiento utm: dos variantes de la misma
       noticia dan la misma url corta. Otros parámetros se conservan y una url vacía
-      sale NULL.
+      sale como el texto 'NULL'.
     model: stg_sql_server_dbo__noticia
     given:
       - input: ref('categorias')
@@ -203,7 +203,7 @@ unit_tests:
         - {titular: t3, url: 'https://www.diario.example/c-3'}
         - {titular: t4, url: 'https://www.diario.example/c-3'}
         - {titular: t5, url: 'https://www.diario.example/d-4?id=7'}
-        - {titular: t6, url: null}
+        - {titular: t6, url: 'NULL'}
 
   # ---------------------------------------------------------------- THREAD
   - name: test_stg_thread_solo_fechas_validas

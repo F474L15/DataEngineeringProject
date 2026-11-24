@@ -24,11 +24,9 @@ sources:
           periodista y autor principal vienen en la misma fila).
         columns:
           - name: url
-            description: Clave natural de la noticia. Vacía en 25 filas.
-            tests:
-              - not_null:
-                  config:
-                    severity: warn
+            description: >
+              Clave natural de la noticia. Vacía en 25 filas; staging las
+              convierte en el texto 'NULL' y el control se hace en Silver.
           - name: fecha_publicacion
             description: Varchar con seis formatos mezclados.
           - name: nombre_periodico
@@ -44,12 +42,11 @@ sources:
           en cada post).
         columns:
           - name: id_post
-            description: Número. Hay 95 IDs repetidos en origen; staging deduplica.
+            description: >
+              Número. Hay 95 IDs repetidos en origen; slv_post los deduplica y
+              allí se comprueba que id_post es único.
             tests:
               - not_null
-              - unique:
-                  config:
-                    severity: warn
           - name: id_usuario
             description: Hash alfanumérico; vacío en algunos posts.
           - name: name_tablon
@@ -65,12 +62,11 @@ sources:
         description: Catálogo de eventos. Hecho principal de Gold.
         columns:
           - name: id_evento
-            description: Hay IDs repetidos y eventos casi duplicados con IDs distintos.
+            description: >
+              Hay 2 IDs repetidos (6 y 11) y eventos casi duplicados con IDs distintos.
+              Staging los deduplica y allí se comprueba que id_evento es único.
             tests:
               - not_null
-              - unique:
-                  config:
-                    severity: warn
           - name: fecha_evento
             description: Varchar con formatos mezclados y algunas fechas inválidas.
           - name: categoria

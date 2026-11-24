@@ -76,9 +76,13 @@ models:
                 to: ref('dim_thread')
                 field: id_thread
       - name: post_padre
-        description: Nunca nulo. Un post sin padre en origen apunta al raíz de su thread.
+        description: Nunca nulo y siempre existe en dim_post. Un post sin padre, o con un padre inexistente, apunta al raíz de su thread.
         tests:
           - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_post')
+                field: id_post
   - name: fct_menciona_evento_noticia
     description: >
       Una fila por (evento, noticia). palabras_clave lista las que aparecen. Incremental por id_men: recoge las parejas que Silver calcula desde la última ejecución. Sin ordenar.
@@ -137,3 +141,29 @@ models:
                 field: id_fecha
               config:
                 severity: warn
+
+unit_tests:
+  - name: test_dim_post_padre_inexistente
+    description: >
+      post_padre vacío o que apunta a un post inexistente se sustituye por el post
+      raíz del thread; un padre existente se conserva.
+    model: dim_post
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('slv_sql_server_dbo__post')
+        rows:
+          - {id_post: 1, id_thread: 7, post_padre: null, fecha_post: '2020-01-01 10:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 2, id_thread: 7, post_padre: 1,    fecha_post: '2020-01-01 11:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 3, id_thread: 7, post_padre: 999,  fecha_post: '2020-01-01 12:00:00', _loaded_at: '2026-01-01 00:00:00'}
+          - {id_post: 4, id_thread: 7, post_padre: null, fecha_post: '2020-01-01 13:00:00', _loaded_at: '2026-01-01 00:00:00'}
+      - input: ref('slv_sql_server_dbo__thread')
+        rows:
+          - {id_thread: 7, id_post_raiz: 1}
+    expect:
+      rows:
+        - {id_post: 1, post_padre: 1}
+        - {id_post: 2, post_padre: 1}
+        - {id_post: 3, post_padre: 1}
+        - {id_post: 4, post_padre: 1}
